@@ -31,7 +31,7 @@ import com.example.inoconnect.data.FirebaseRepository
 import com.example.inoconnect.data.UserRole
 import kotlinx.coroutines.launch
 
-// NOTE: Helpers (StyledTextField, SocialIcon, RoleOption, BrandBlue) are now in AuthComponents.kt
+// NOTE: Helpers (StyledTextField, SocialIcon, RoleOption, BrandBlue) are in AuthComponents.kt
 
 @Composable
 fun RegisterScreen(
@@ -54,7 +54,7 @@ fun RegisterScreen(
             .fillMaxSize()
             .background(Color.White)
     ) {
-        // 1. Blue Curved Header
+        // 1. Blue Curved Header (Background)
         Canvas(modifier = Modifier.fillMaxWidth().height(220.dp)) {
             val path = Path().apply {
                 moveTo(0f, 0f)
@@ -69,17 +69,7 @@ fun RegisterScreen(
             drawPath(path = path, color = BrandBlue)
         }
 
-        // Back Button
-        IconButton(
-            onClick = onBackClick,
-            modifier = Modifier
-                .padding(top = 40.dp, start = 16.dp)
-                .align(Alignment.TopStart)
-        ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-        }
-
-        // 2. Main Content
+        // 2. Main Content (Middle Layer)
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -239,6 +229,15 @@ fun RegisterScreen(
                 }
             }
             Spacer(modifier = Modifier.height(24.dp))
+        }
+
+        IconButton(
+            onClick = onBackClick,
+            modifier = Modifier
+                .padding(top = 40.dp, start = 16.dp)
+                .align(Alignment.TopStart)
+        ) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
         }
     }
 }
