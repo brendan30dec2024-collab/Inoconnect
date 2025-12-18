@@ -1,6 +1,6 @@
 package com.example.inoconnect.ui.participant
 
-import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -10,8 +10,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,38 +19,34 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.example.inoconnect.data.Event
 import com.example.inoconnect.data.FirebaseRepository
+import com.example.inoconnect.data.Project
 import com.example.inoconnect.ui.auth.BrandBlue
-import kotlinx.coroutines.launch
 
 @Composable
-fun EventDetailScreen(
-    eventId: String,
-    onNavigateBack: () -> Unit
+fun ProjectDetailScreen(
+    projectId: String,
+    onBackClick: () -> Unit
 ) {
     val repository = remember { FirebaseRepository() }
-    val scope = rememberCoroutineScope()
-    val context = LocalContext.current
 
-    var event by remember { mutableStateOf<Event?>(null) }
-    var organizerName by remember { mutableStateOf("Loading...") } // <--- NEW STATE
+    // State
+    var project by remember { mutableStateOf<Project?>(null) }
+    var creatorName by remember { mutableStateOf("Loading...") } // <--- NEW STATE
     var isLoading by remember { mutableStateOf(true) }
-    var isJoining by remember { mutableStateOf(false) }
 
-    LaunchedEffect(eventId) {
-        val fetchedEvent = repository.getEventById(eventId)
-        event = fetchedEvent
+    LaunchedEffect(projectId) {
+        val fetchedProject = repository.getProjectById(projectId)
+        project = fetchedProject
 
-        // Fetch Organizer Name if event exists
-        if (fetchedEvent != null) {
-            val user = repository.getUserById(fetchedEvent.organizerId)
-            organizerName = user?.username ?: "Unknown Organizer"
+        // Fetch Creator Name
+        if (fetchedProject != null) {
+            val user = repository.getUserById(fetchedProject.creatorId)
+            creatorName = user?.username ?: "Unknown User"
         }
         isLoading = false
     }
@@ -78,7 +73,7 @@ fun EventDetailScreen(
 
         // Back Button
         IconButton(
-            onClick = onNavigateBack,
+            onClick = onBackClick,
             modifier = Modifier
                 .padding(top = 40.dp, start = 16.dp)
                 .align(Alignment.TopStart)
@@ -89,11 +84,10 @@ fun EventDetailScreen(
         // --- 2. Main Content ---
         if (isLoading) {
             CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = BrandBlue)
-        } else if (event == null) {
-            Text("Event not found", modifier = Modifier.align(Alignment.Center), color = Color.Gray)
+        } else if (project == null) {
+            Text("Project not found", modifier = Modifier.align(Alignment.Center), color = Color.Gray)
         } else {
-            val e = event!!
-            val isJoined = e.participantIds.contains(repository.currentUserId)
+            val p = project!!
 
             Column(
                 modifier = Modifier
@@ -104,7 +98,7 @@ fun EventDetailScreen(
             ) {
                 // Header Text
                 Text(
-                    text = "Event Details",
+                    text = "Project Details",
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
@@ -123,9 +117,9 @@ fun EventDetailScreen(
                 ) {
                     Column {
                         // Image Header
-                        if (e.imageUrl.isNotEmpty()) {
+                        if (p.imageUrl.isNotBlank()) {
                             AsyncImage(
-                                model = e.imageUrl,
+                                model = p.imageUrl,
                                 contentDescription = null,
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -140,17 +134,17 @@ fun EventDetailScreen(
                                     .background(Color(0xFFF5F5F5)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("No Image Available", color = Color.Gray)
+                                Text("No Cover Image", color = Color.Gray)
                             }
                         }
 
                         // Content Body
                         Column(modifier = Modifier.padding(24.dp)) {
-                            Text(e.title, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                            Text(p.title, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.Black)
 
-                            // --- NEW: Organizer Name ---
+                            // --- NEW: Creator Name ---
                             Text(
-                                text = "Organized by $organizerName",
+                                text = "Created by $creatorName",
                                 fontSize = 14.sp,
                                 color = BrandBlue,
                                 fontWeight = FontWeight.Medium
@@ -158,75 +152,72 @@ fun EventDetailScreen(
 
                             Spacer(Modifier.height(16.dp))
 
-                            // Info Rows
-                            DetailRow(Icons.Default.DateRange, e.eventDate)
-                            Spacer(Modifier.height(8.dp))
-                            DetailRow(Icons.Default.LocationOn, e.location)
-                            Spacer(Modifier.height(8.dp))
-                            DetailRow(Icons.Default.Warning, "Deadline: ${e.joiningDeadline}", isWarning = true)
+                            // Stats Row
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                // Team Size
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Person, null, tint = BrandBlue, modifier = Modifier.size(20.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("${p.memberIds.size}/${p.targetTeamSize} Members", fontSize = 14.sp)
+                                }
+
+                                // Deadline
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.DateRange, null, tint = BrandBlue, modifier = Modifier.size(20.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Due: ${p.recruitmentDeadline}", fontSize = 14.sp)
+                                }
+                            }
 
                             Spacer(Modifier.height(24.dp))
                             HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f))
                             Spacer(Modifier.height(16.dp))
 
-                            Text("Description", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            // Description
+                            Text("About Project", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                             Spacer(Modifier.height(8.dp))
-                            Text(e.description, fontSize = 14.sp, color = Color.Gray, lineHeight = 22.sp)
+                            Text(p.description, fontSize = 14.sp, color = Color.Gray, lineHeight = 22.sp)
+
+                            Spacer(Modifier.height(24.dp))
+
+                            // Looking For Tags
+                            if (p.tags.isNotEmpty()) {
+                                Text("Looking For", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.height(12.dp))
+
+                                @OptIn(ExperimentalLayoutApi::class)
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    p.tags.forEach { tag ->
+                                        SuggestionChip(
+                                            onClick = {},
+                                            label = { Text(tag, color = BrandBlue, fontWeight = FontWeight.Medium) },
+                                            colors = SuggestionChipDefaults.suggestionChipColors(
+                                                containerColor = BrandBlue.copy(alpha = 0.1f)
+                                            ),
+                                            border = BorderStroke(1.dp, BrandBlue.copy(alpha = 0.3f))
+                                        )
+                                    }
+                                }
+                            }
 
                             Spacer(Modifier.height(32.dp))
 
                             // Action Button
                             Button(
-                                onClick = {
-                                    if (!isJoined) {
-                                        scope.launch {
-                                            isJoining = true
-                                            repository.joinEvent(eventId)
-                                            isJoining = false
-                                            Toast.makeText(context, "Successfully Joined!", Toast.LENGTH_SHORT).show()
-                                            onNavigateBack()
-                                        }
-                                    }
-                                },
+                                onClick = { /* Future Logic: Request to Join */ },
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (isJoined) Color.Gray else BrandBlue
-                                ),
-                                shape = RoundedCornerShape(12.dp),
-                                enabled = !isJoined && !isJoining
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandBlue),
+                                shape = RoundedCornerShape(12.dp)
                             ) {
-                                if (isJoining) {
-                                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
-                                } else {
-                                    Text(
-                                        text = if (isJoined) "Already Joined" else "Join Event",
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
+                                Text("Request to Join Team", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
                 }
             }
         }
-    }
-}
-
-@Composable
-fun DetailRow(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, isWarning: Boolean = false) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = if (isWarning) Color.Red else BrandBlue,
-            modifier = Modifier.size(20.dp)
-        )
-        Spacer(Modifier.width(12.dp))
-        Text(
-            text = text,
-            fontSize = 14.sp,
-            color = if (isWarning) Color.Red else Color.DarkGray
-        )
     }
 }

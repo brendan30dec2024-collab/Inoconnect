@@ -97,20 +97,50 @@ class FirebaseRepository {
         title: String,
         description: String,
         imageUrl: String,
-        tags: List<String> // Custom user tags
+        tags: List<String>,
+        recruitmentDeadline: String, // NEW
+        targetTeamSize: Int          // NEW
     ) {
         val uid = currentUserId ?: return
         val newDoc = db.collection("projects").document()
+
+        // Auto-add creator to the members list so count starts at 1
+        val initialMembers = listOf(uid)
+
         val project = Project(
             projectId = newDoc.id,
             creatorId = uid,
             title = title,
             description = description,
             imageUrl = imageUrl,
-            tags = tags
+            tags = tags,
+            memberIds = initialMembers,
+            recruitmentDeadline = recruitmentDeadline,
+            targetTeamSize = targetTeamSize
         )
         newDoc.set(project).await()
     }
+
+    suspend fun getProjectById(projectId: String): Project? {
+        return try {
+            val snapshot = db.collection("projects").document(projectId).get().await()
+            snapshot.toObject(Project::class.java)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    suspend fun getUserById(userId: String): User? {
+        return try {
+            val snapshot = db.collection("users").document(userId).get().await()
+            snapshot.toObject(User::class.java)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
 
     suspend fun getAllProjects(): List<Project> {
         val snapshot = db.collection("projects").get().await()
