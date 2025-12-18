@@ -1,5 +1,6 @@
 package com.example.inoconnect.ui.participant
 
+import com.example.inoconnect.ui.project_management.MyProjectScreen
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -158,6 +159,16 @@ fun ParticipantMainScreen(
                     }
                 }
             }
+
+            composable("my_project") {
+                MyProjectScreen(
+                    onProjectClick = { projectId ->
+                        // Placeholder: We will route this to the detailed Management Screen next
+                        rootNavController.navigate("project_management/$projectId")
+                    }
+                )
+            }
+
         }
     }
 }

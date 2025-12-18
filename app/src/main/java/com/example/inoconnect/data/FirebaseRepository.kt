@@ -183,4 +183,87 @@ class FirebaseRepository {
             e.printStackTrace()
         }
     }
+
+    // ... inside FirebaseRepository class ...
+
+    // --- DASHBOARD: GET MY PROJECTS ---
+    suspend fun getUserProjects(): List<Project> {
+        val uid = currentUserId ?: return emptyList()
+        return try {
+            // Fetch projects where the user is EITHER the creator OR a member
+            // Note: Firestore 'array-contains' only allows one filter per query usually.
+            // For simplicity, we filter where user is in 'memberIds' (since creators should be members too)
+            val snapshot = db.collection("projects")
+                .whereArrayContains("memberIds", uid)
+                .get()
+                .await()
+            snapshot.toObjects(Project::class.java)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emptyList()
+        }
+    }
+
+    // --- MILESTONE LOGIC ---
+    suspend fun addMilestone(projectId: String, title: String) {
+        val milestone = Milestone(title = title, isCompleted = false)
+        db.collection("projects").document(projectId)
+            .update("milestones", FieldValue.arrayUnion(milestone))
+            .await()
+    }
+
+    suspend fun toggleMilestone(projectId: String, milestone: Milestone) {
+        // To update an item in an array, we typically remove the old and add the new
+        // OR read-modify-write. Firestore doesn't support updating a specific index easily.
+        // Simple approach: Read, modify list, write back.
+        db.runTransaction { transaction ->
+            val ref = db.collection("projects").document(projectId)
+            val snapshot = transaction.get(ref)
+            val project = snapshot.toObject(Project::class.java) ?: return@runTransaction
+
+            val updatedMilestones = project.milestones.map {
+                if (it.id == milestone.id) it.copy(isCompleted = !it.isCompleted) else it
+            }
+
+            transaction.update(ref, "milestones", updatedMilestones)
+        }.await()
+    }
+
+    // --- JOIN REQUEST LOGIC ---
+    suspend fun requestToJoinProject(projectId: String) {
+        val uid = currentUserId ?: return
+        db.collection("projects").document(projectId)
+            .update("pendingApplicantIds", FieldValue.arrayUnion(uid))
+            .await()
+    }
+
+    suspend fun acceptJoinRequest(projectId: String, applicantId: String) {
+        val ref = db.collection("projects").document(projectId)
+        db.runTransaction { transaction ->
+            // 1. Remove from pending
+            transaction.update(ref, "pendingApplicantIds", FieldValue.arrayRemove(applicantId))
+            // 2. Add to members
+            transaction.update(ref, "memberIds", FieldValue.arrayUnion(applicantId))
+        }.await()
+    }
+
+    // ... inside FirebaseRepository ...
+
+    // --- ADMIN LOGIC ---
+    suspend fun getUsersByIds(userIds: List<String>): List<User> {
+        if (userIds.isEmpty()) return emptyList()
+        // Firestore 'in' queries are limited to 10 items.
+        // For production, you'd batch this. For now, we'll fetch individually (simple prototype).
+        return userIds.mapNotNull { uid ->
+            try {
+                db.collection("users").document(uid).get().await().toObject(User::class.java)
+            } catch (e: Exception) { null }
+        }
+    }
+
+    suspend fun rejectJoinRequest(projectId: String, applicantId: String) {
+        db.collection("projects").document(projectId)
+            .update("pendingApplicantIds", FieldValue.arrayRemove(applicantId))
+            .await()
+    }
 }
