@@ -24,7 +24,7 @@ fun OrganizerDashboard(
     onLogout: () -> Unit
 ) {
     val repository = remember { FirebaseRepository() }
-    val scope = rememberCoroutineScope() // Needed for delete action
+    val scope = rememberCoroutineScope()
     var myEvents by remember { mutableStateOf<List<Event>>(emptyList()) }
 
     // Helper function to refresh list
@@ -76,7 +76,11 @@ fun OrganizerDashboard(
 
 @Composable
 fun EventItemWithDelete(event: Event, onDeleteClick: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        elevation = CardDefaults.cardElevation(4.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White)
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -85,10 +89,12 @@ fun EventItemWithDelete(event: Event, onDeleteClick: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Text Info
-            Column(modifier = Modifier.weight(1f)) { // Weight 1f makes it take up available space
+            Column(modifier = Modifier.weight(1f)) {
                 Text(event.title, style = MaterialTheme.typography.titleLarge)
-                Text("Date: ${event.date}")
-                Text("Participants: ${event.participantIds.size}")
+                // FIX: Using the new 'eventDate' and 'location' fields
+                Text("Date: ${event.eventDate}", style = MaterialTheme.typography.bodyMedium)
+                Text("Location: ${event.location}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                Text("Participants: ${event.participantIds.size}", style = MaterialTheme.typography.bodySmall)
             }
 
             // Delete Button
@@ -96,7 +102,7 @@ fun EventItemWithDelete(event: Event, onDeleteClick: () -> Unit) {
                 Icon(
                     imageVector = Icons.Default.Delete,
                     contentDescription = "Delete Event",
-                    tint = Color.Red // Make it red to indicate danger
+                    tint = Color.Red
                 )
             }
         }

@@ -5,10 +5,16 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
@@ -24,10 +30,15 @@ fun CreateProjectScreen(
     val repository = remember { FirebaseRepository() }
     val scope = rememberCoroutineScope()
 
+    // Form State
     var title by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
-    var date by remember { mutableStateOf("") }
-    var location by remember { mutableStateOf("") }
+
+    // Tag State
+    var currentTagInput by remember { mutableStateOf("") }
+    val tags = remember { mutableStateListOf<String>() } // Holds the list of tags
+
+    // Image State
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
     var isUploading by remember { mutableStateOf(false) }
 
@@ -37,7 +48,6 @@ fun CreateProjectScreen(
 
     Scaffold(
         topBar = {
-            // You can add a TopAppBar here with a back button if you like
             Text("Create New Project", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(16.dp))
         }
     ) { padding ->
@@ -48,7 +58,7 @@ fun CreateProjectScreen(
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            // Image Picker
+            // --- IMAGE PICKER ---
             if (selectedImageUri != null) {
                 AsyncImage(
                     model = selectedImageUri,
@@ -66,13 +76,56 @@ fun CreateProjectScreen(
 
             Spacer(Modifier.height(16.dp))
 
+            // --- TEXT FIELDS ---
             OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Project Name") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = date, onValueChange = { date = it }, label = { Text("Date") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = location, onValueChange = { location = it }, label = { Text("Location") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
+
+            Spacer(Modifier.height(16.dp))
+
+            // --- CUSTOM TAGS SECTION ---
+            Text("Targeted Skills / Tags:", style = MaterialTheme.typography.titleSmall)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = currentTagInput,
+                    onValueChange = { currentTagInput = it },
+                    label = { Text("Add Tag (e.g. AI, Design)") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true
+                )
+                Spacer(Modifier.width(8.dp))
+                IconButton(
+                    onClick = {
+                        if (currentTagInput.isNotBlank() && !tags.contains(currentTagInput)) {
+                            tags.add(currentTagInput.trim())
+                            currentTagInput = "" // Clear input
+                        }
+                    },
+                    modifier = Modifier.padding(top = 8.dp)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Add Tag")
+                }
+            }
+
+            // Display Added Tags
+            Spacer(Modifier.height(8.dp))
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(tags) { tag ->
+                    InputChip(
+                        selected = true,
+                        onClick = { tags.remove(tag) }, // Click to remove
+                        label = { Text(tag) },
+                        trailingIcon = { Icon(Icons.Default.Close, "Remove", modifier = Modifier.size(16.dp)) }
+                    )
+                }
+            }
 
             Spacer(Modifier.height(24.dp))
 
+            // --- SUBMIT BUTTON ---
             if (isUploading) {
                 CircularProgressIndicator()
             } else {
@@ -82,17 +135,18 @@ fun CreateProjectScreen(
                             isUploading = true
                             var finalImageUrl = ""
                             if (selectedImageUri != null) {
-                                finalImageUrl = repository.uploadEventImage(selectedImageUri!!) ?: ""
+                                finalImageUrl = repository.uploadImage(selectedImageUri!!) ?: ""
                             }
 
-                            // *** CRITICAL: Saving with tag = "Project" ***
-                            repository.createEvent(title, description, date, location, finalImageUrl, "Project")
+                            // Create Project with the list of tags
+                            repository.createProject(title, description, finalImageUrl, tags.toList())
 
                             isUploading = false
                             onProjectCreated()
                         }
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = title.isNotEmpty()
                 ) {
                     Text("Publish Project")
                 }

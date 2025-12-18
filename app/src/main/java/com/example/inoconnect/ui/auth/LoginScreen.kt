@@ -1,9 +1,7 @@
 package com.example.inoconnect.ui.auth
 
 import android.widget.Toast
-import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -20,20 +18,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.inoconnect.R // <--- MAKE SURE THIS IMPORT IS HERE
+import com.example.inoconnect.R
 import com.example.inoconnect.data.FirebaseRepository
 import kotlinx.coroutines.launch
 
-// Define the custom Blue Color from your image
-val BrandBlue = Color(0xFF0083B0) // A nice ocean blue
-val LightGrayInput = Color(0xFFF5F5F5)
+// NOTE: Helpers (StyledTextField, SocialIcon, BrandBlue) are now in AuthComponents.kt
 
 @Composable
 fun LoginScreen(
@@ -48,38 +41,33 @@ fun LoginScreen(
     var password by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
 
-    // Root Container
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.White)
     ) {
-        // 1. The Blue Curved Header
+        // 1. Blue Curved Header
         Canvas(modifier = Modifier.fillMaxWidth().height(250.dp)) {
             val path = Path().apply {
                 moveTo(0f, 0f)
                 lineTo(size.width, 0f)
                 lineTo(size.width, size.height - 100)
-                // Creates the curve at the bottom
                 quadraticBezierTo(
-                    size.width / 2, size.height + 50, // Control point (pulls curve down)
-                    0f, size.height - 100 // End point
+                    size.width / 2, size.height + 50,
+                    0f, size.height - 100
                 )
                 close()
             }
             drawPath(path = path, color = BrandBlue)
         }
 
-        // 2. The Main Content (Card + Icon)
+        // 2. Main Content
         Column(
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-
-            // Spacer to push the icon down to the curve line
             Spacer(modifier = Modifier.height(140.dp))
 
-            // The Profile Icon (White Circle with Icon inside)
             Surface(
                 shape = CircleShape,
                 color = Color.White,
@@ -96,10 +84,9 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // The Login Card
             Card(
                 modifier = Modifier
-                    .fillMaxWidth(0.85f) // 85% screen width
+                    .fillMaxWidth(0.85f)
                     .shadow(elevation = 10.dp, shape = RoundedCornerShape(24.dp)),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 shape = RoundedCornerShape(24.dp)
@@ -113,7 +100,6 @@ fun LoginScreen(
 
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    // Email Input
                     StyledTextField(
                         value = email,
                         onValueChange = { email = it },
@@ -123,7 +109,6 @@ fun LoginScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Password Input
                     StyledTextField(
                         value = password,
                         onValueChange = { password = it },
@@ -132,7 +117,6 @@ fun LoginScreen(
                         isPassword = true
                     )
 
-                    // Forgot Password (Visual only)
                     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
                         TextButton(onClick = { /* TODO */ }) {
                             Text("Forgot Password?", color = Color.Gray, fontSize = 12.sp)
@@ -161,9 +145,7 @@ fun LoginScreen(
                                     }
                                 }
                             },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp),
+                            modifier = Modifier.fillMaxWidth().height(50.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = BrandBlue),
                             shape = RoundedCornerShape(12.dp)
                         ) {
@@ -177,11 +159,7 @@ fun LoginScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Social Icons (Updated to use your drawables)
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        // Assuming your files are named exactly like this in the drawable folder:
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         SocialIcon(iconResId = R.drawable.google_color_icon)
                         SocialIcon(iconResId = R.drawable.facebook)
                         SocialIcon(iconResId = R.drawable.github_icon)
@@ -189,7 +167,6 @@ fun LoginScreen(
 
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    // Register Link
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Don't have an account?", color = Color.Gray, fontSize = 12.sp)
                         Text(
@@ -202,59 +179,6 @@ fun LoginScreen(
                     }
                 }
             }
-        }
-    }
-}
-
-// --- HELPER COMPONENTS TO KEEP CODE CLEAN ---
-
-@Composable
-fun StyledTextField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    label: String,
-    icon: ImageVector,
-    isPassword: Boolean = false
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(text = label, fontWeight = FontWeight.SemiBold, color = Color.Black, modifier = Modifier.padding(start = 4.dp, bottom = 4.dp))
-        TextField(
-            value = value,
-            onValueChange = onValueChange,
-            placeholder = { Text("Enter your $label", color = Color.Gray) },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = TextFieldDefaults.colors(
-                focusedContainerColor = LightGrayInput,
-                unfocusedContainerColor = LightGrayInput,
-                disabledContainerColor = LightGrayInput,
-                focusedIndicatorColor = Color.Transparent, // Hides the underline
-                unfocusedIndicatorColor = Color.Transparent,
-            ),
-            leadingIcon = { Icon(icon, contentDescription = null, tint = Color.Gray) },
-            visualTransformation = if (isPassword) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
-            singleLine = true
-        )
-    }
-}
-
-// Updated SocialIcon helper to take a Drawable Resource ID
-@Composable
-fun SocialIcon(@DrawableRes iconResId: Int) {
-    Surface(
-        modifier = Modifier.size(50.dp).clickable { /* No Op */ },
-        shape = CircleShape,
-        color = Color.White,
-        shadowElevation = 4.dp
-    ) {
-        // Using Box with padding so the logo doesn't touch the edge of the circle
-        Box(modifier = Modifier.padding(12.dp), contentAlignment = Alignment.Center) {
-            // Using Image composable to preserve original colors (especially for Google)
-            Image(
-                painter = painterResource(id = iconResId),
-                contentDescription = null, // Decorative only
-                modifier = Modifier.fillMaxSize()
-            )
         }
     }
 }

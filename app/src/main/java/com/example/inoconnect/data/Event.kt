@@ -5,9 +5,9 @@ data class Event(
     val organizerId: String = "",
     val title: String = "",
     val description: String = "",
-    val date: String = "",
     val location: String = "",
     val imageUrl: String = "",
-    val tag: String = "Event", // <--- NEW: Can be "Event" or "Project"
+    val eventDate: String = "",
+    val joiningDeadline: String = "",
     val participantIds: List<String> = emptyList()
 )
