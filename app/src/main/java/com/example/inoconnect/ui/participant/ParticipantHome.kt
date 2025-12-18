@@ -13,7 +13,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
@@ -39,6 +41,7 @@ import kotlinx.coroutines.delay
 @Composable
 fun ParticipantHome(
     onEventClick: (String) -> Unit,
+    onProjectClick: (String) -> Unit, // <--- NEW PARAMETER
     onCreateProjectClick: () -> Unit
 ) {
     val repository = remember { FirebaseRepository() }
@@ -63,9 +66,7 @@ fun ParticipantHome(
     var isSortedAsc by remember { mutableStateOf(false) }
 
     Scaffold(
-        // FIX: This removes the huge gap at the top (Double Insets issue)
         contentWindowInsets = WindowInsets(0.dp),
-
         floatingActionButton = {
             if (selectedTab == 1) {
                 ExtendedFloatingActionButton(
@@ -160,7 +161,7 @@ fun ParticipantHome(
                     if (selectedTab == 0) {
                         EventList(events, searchQuery, isSortedAsc, onEventClick)
                     } else {
-                        ProjectList(projects, searchQuery, isSortedAsc)
+                        ProjectList(projects, searchQuery, isSortedAsc, onProjectClick)
                     }
                 }
             }
@@ -292,7 +293,8 @@ fun EventList(
 fun ProjectList(
     projects: List<Project>,
     searchQuery: String,
-    isSortedAsc: Boolean
+    isSortedAsc: Boolean,
+    onProjectClick: (String) -> Unit // <--- NEW CALLBACK
 ) {
     val filteredProjects = projects.filter {
         it.title.contains(searchQuery, ignoreCase = true) ||
@@ -306,35 +308,79 @@ fun ProjectList(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 12.dp),
-                elevation = CardDefaults.cardElevation(4.dp),
+                    .padding(bottom = 12.dp)
+                    .clickable { onProjectClick(project.projectId) }, // <--- TRIGGER CLICK
+                elevation = CardDefaults.cardElevation(2.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White)
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.Top) {
+                        // 1. Thumbnail
                         if (project.imageUrl.isNotEmpty()) {
                             AsyncImage(
                                 model = project.imageUrl,
                                 contentDescription = null,
                                 modifier = Modifier
-                                    .size(60.dp)
+                                    .size(70.dp)
                                     .clip(RoundedCornerShape(8.dp)),
                                 contentScale = ContentScale.Crop
                             )
                             Spacer(modifier = Modifier.width(12.dp))
                         }
-                        Text(project.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
+                        // 2. Main Info (Title, Team Size, Deadline)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(project.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            // Team Size: "2/5 Team Members"
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Person, null, modifier = Modifier.size(14.dp), tint = Color.Gray)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "${project.memberIds.size}/${project.targetTeamSize} Team Members",
+                                    fontSize = 12.sp,
+                                    color = Color.Gray
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            // Deadline
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.DateRange, null, modifier = Modifier.size(14.dp), tint = Color.Gray)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Deadline: ${project.recruitmentDeadline}",
+                                    fontSize = 12.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                        }
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        items(project.tags) { tag ->
-                            SuggestionChip(
-                                onClick = { },
-                                label = { Text(tag, fontSize = 10.sp) },
-                                modifier = Modifier.height(28.dp)
-                            )
+                    // 3. "Looking For" Tags
+                    if (project.tags.isNotEmpty()) {
+                        Text("Looking for:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandBlue)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            items(project.tags) { role ->
+                                SuggestionChip(
+                                    onClick = { },
+                                    label = { Text(role, fontSize = 10.sp) },
+                                    modifier = Modifier.height(26.dp),
+                                    colors = SuggestionChipDefaults.suggestionChipColors(
+                                        containerColor = BrandBlue.copy(alpha = 0.05f)
+                                    ),
+                                    border = SuggestionChipDefaults.suggestionChipBorder(
+                                        enabled = true,
+                                        borderColor = BrandBlue.copy(alpha = 0.2f)
+                                    )
+                                )
+                            }
                         }
                     }
                 }

@@ -11,7 +11,8 @@ import com.example.inoconnect.ui.organizer.CreateEventScreen
 import com.example.inoconnect.ui.organizer.OrganizerDashboard
 import com.example.inoconnect.ui.participant.CreateProjectScreen
 import com.example.inoconnect.ui.participant.EventDetailScreen
-import com.example.inoconnect.ui.participant.ParticipantMainScreen // Make sure this is imported!
+import com.example.inoconnect.ui.participant.ParticipantMainScreen
+import com.example.inoconnect.ui.participant.ProjectDetailScreen // Ensure you created this file from previous step
 
 @Composable
 fun AppNavigation() {
@@ -33,7 +34,6 @@ fun AppNavigation() {
         composable("register") {
             RegisterScreen(
                 onRegisterSuccess = { role ->
-                    // Clear back stack so user can't go back to register
                     if (role == UserRole.ORGANIZER) {
                         navController.navigate("organizer_dash") { popUpTo("login") { inclusive = true } }
                     } else {
@@ -60,16 +60,19 @@ fun AppNavigation() {
             )
         }
 
+        // --- Participant ---
         composable("participant_main") {
             ParticipantMainScreen(
                 rootNavController = navController,
                 onEventClick = { eventId ->
                     navController.navigate("event_detail/$eventId")
+                },
+                onProjectClick = { projectId ->
+                    navController.navigate("project_detail/$projectId")
                 }
             )
         }
 
-        // --- Event Detail ---
         composable("event_detail/{eventId}") { backStackEntry ->
             val eventId = backStackEntry.arguments?.getString("eventId") ?: ""
             EventDetailScreen(
@@ -81,6 +84,15 @@ fun AppNavigation() {
         composable("create_project") {
             CreateProjectScreen(
                 onProjectCreated = { navController.popBackStack() },
+                onBackClick = { navController.popBackStack() }
+            )
+        }
+
+        // --- Project Detail (NEW) ---
+        composable("project_detail/{projectId}") { backStackEntry ->
+            val projectId = backStackEntry.arguments?.getString("projectId") ?: ""
+            ProjectDetailScreen(
+                projectId = projectId,
                 onBackClick = { navController.popBackStack() }
             )
         }

@@ -1,10 +1,9 @@
 package com.example.inoconnect.ui.participant
 
-import androidx.compose.foundation.layout.Box // <--- WAS MISSING
-import androidx.compose.foundation.layout.fillMaxSize // <--- USEFUL TO HAVE
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
@@ -13,7 +12,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment // <--- ADDED FOR CENTER ALIGNMENT
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -30,13 +29,13 @@ import com.example.inoconnect.ui.auth.BrandBlue
 @Composable
 fun ParticipantMainScreen(
     rootNavController: NavController,
-    onEventClick: (String) -> Unit
+    onEventClick: (String) -> Unit,
+    onProjectClick: (String) -> Unit // <--- NEW PARAMETER
 ) {
     val bottomNavController = rememberNavController()
     val repository = remember { FirebaseRepository() }
 
     Scaffold(
-        // 1. Top Bar with "InnoConnect" and Message Button
         topBar = {
             TopAppBar(
                 title = {
@@ -48,12 +47,9 @@ fun ParticipantMainScreen(
                     )
                 },
                 actions = {
-                    // Message Button with Notification Badge
                     IconButton(onClick = { /* TODO: Navigate to Messages */ }) {
                         BadgedBox(
-                            badge = {
-                                Badge { Text("3") } // Fake notification count
-                            }
+                            badge = { Badge { Text("3") } }
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Email,
@@ -65,17 +61,15 @@ fun ParticipantMainScreen(
                 }
             )
         },
-        // 2. Bottom Navigation with 5 Sections
         bottomBar = {
             NavigationBar(containerColor = Color.White) {
-                // Define the 5 Tabs
                 val items = listOf("Home", "My Project", "Collab", "Connect", "Profile")
                 val icons = listOf(
-                    Icons.Default.Home,     // Home
-                    Icons.Default.List,     // My Project (List view)
-                    Icons.Default.ThumbUp,  // Collab (Like/Teamwork)
-                    Icons.Default.Share,    // Connect (Network)
-                    Icons.Default.Person    // Profile
+                    Icons.Default.Home,
+                    Icons.Default.List,
+                    Icons.Default.ThumbUp,
+                    Icons.Default.Share,
+                    Icons.Default.Person
                 )
 
                 var selectedItem by remember { mutableIntStateOf(0) }
@@ -111,7 +105,6 @@ fun ParticipantMainScreen(
             }
         }
     ) { innerPadding ->
-        // 3. Navigation Host for the Tabs
         NavHost(
             navController = bottomNavController,
             startDestination = "home",
@@ -121,6 +114,7 @@ fun ParticipantMainScreen(
             composable("home") {
                 ParticipantHome(
                     onEventClick = onEventClick,
+                    onProjectClick = onProjectClick, // <--- PASS DOWN
                     onCreateProjectClick = {
                         rootNavController.navigate("create_project")
                     }
@@ -150,7 +144,6 @@ fun ParticipantMainScreen(
 
             // -- PROFILE --
             composable("profile") {
-                // Simple Profile screen with Logout
                 Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
                     Button(
                         onClick = {

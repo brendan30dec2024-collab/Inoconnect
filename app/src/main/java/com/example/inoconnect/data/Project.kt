@@ -6,7 +6,8 @@ data class Project(
     val title: String = "",
     val description: String = "",
     val imageUrl: String = "",
-    // Project specific fields
-    val tags: List<String> = emptyList(), // e.g., ["AI Engineer", "WIA2001"]
-    val memberIds: List<String> = emptyList()
+    val tags: List<String> = emptyList(), // This now represents "Looking For (Roles)"
+    val memberIds: List<String> = emptyList(),
+    val recruitmentDeadline: String = "",
+    val targetTeamSize: Int = 1
 )
