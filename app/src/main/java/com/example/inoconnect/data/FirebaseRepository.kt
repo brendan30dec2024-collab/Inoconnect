@@ -1,6 +1,11 @@
 package com.example.inoconnect.data
 
+import com.google.firebase.firestore.Query
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import android.net.Uri
+import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -319,5 +324,44 @@ class FirebaseRepository {
 
     suspend fun deleteProject(projectId: String) {
         db.collection("projects").document(projectId).delete().await()
+    }
+
+// ... inside FirebaseRepository class ...
+
+    // --- CHAT FEATURE ---
+
+    // 1. Send Message
+    suspend fun sendMessage(projectId: String, messageText: String, senderName: String) {
+        val uid = currentUserId ?: return
+        val newMsgRef = db.collection("projects").document(projectId).collection("messages").document()
+
+        val message = ChatMessage(
+            id = newMsgRef.id,
+            senderId = uid,
+            senderName = senderName,
+            message = messageText,
+            timestamp = Timestamp.now()
+        )
+        newMsgRef.set(message).await()
+    }
+
+    // 2. Listen for Messages (Real-time Flow)
+    fun getProjectMessages(projectId: String): Flow<List<ChatMessage>> = callbackFlow {
+        val subscription = db.collection("projects").document(projectId)
+            .collection("messages")
+            .orderBy("timestamp", Query.Direction.DESCENDING) // Newest first
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val messages = snapshot.toObjects(ChatMessage::class.java)
+                    trySend(messages)
+                }
+            }
+
+        // Cancel listener when UI is closed
+        awaitClose { subscription.remove() }
     }
 }
