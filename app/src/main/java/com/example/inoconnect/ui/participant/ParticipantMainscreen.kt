@@ -1,6 +1,5 @@
 package com.example.inoconnect.ui.participant
 
-import com.example.inoconnect.ui.project_management.MyProjectScreen
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
