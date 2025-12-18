@@ -12,8 +12,9 @@ import com.example.inoconnect.ui.organizer.OrganizerDashboard
 import com.example.inoconnect.ui.participant.CreateProjectScreen
 import com.example.inoconnect.ui.participant.EventDetailScreen
 import com.example.inoconnect.ui.participant.ParticipantMainScreen
-import com.example.inoconnect.ui.participant.ProjectDetailScreen // Ensure you created this file from previous step
-import com.example.inoconnect.ui.project_management.ProjectManagementScreen
+import com.example.inoconnect.ui.participant.ProjectDetailScreen
+import com.example.inoconnect.ui.project_management.ProjectManagementScreen // Make sure to import this!
+
 @Composable
 fun AppNavigation() {
     val navController = rememberNavController()
@@ -88,19 +89,23 @@ fun AppNavigation() {
             )
         }
 
-        // --- Project Detail (NEW) ---
+        // --- Project Detail ---
         composable("project_detail/{projectId}") { backStackEntry ->
             val projectId = backStackEntry.arguments?.getString("projectId") ?: ""
             ProjectDetailScreen(
                 projectId = projectId,
-                onBackClick = { navController.popBackStack() }
+                onBackClick = { navController.popBackStack() },
+                onManageClick = {
+                    navController.navigate("project_management/$projectId")
+                }
             )
         }
 
+        // --- Project Management Hub ---
         composable("project_management/{projectId}") { backStackEntry ->
-            val pid = backStackEntry.arguments?.getString("projectId") ?: ""
+            val projectId = backStackEntry.arguments?.getString("projectId") ?: ""
             ProjectManagementScreen(
-                projectId = pid,
+                projectId = projectId,
                 onBackClick = { navController.popBackStack() }
             )
         }

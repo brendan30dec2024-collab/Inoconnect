@@ -230,11 +230,33 @@ class FirebaseRepository {
     }
 
     // --- JOIN REQUEST LOGIC ---
-    suspend fun requestToJoinProject(projectId: String) {
-        val uid = currentUserId ?: return
-        db.collection("projects").document(projectId)
-            .update("pendingApplicantIds", FieldValue.arrayUnion(uid))
-            .await()
+    suspend fun requestToJoinProject(projectId: String): Boolean {
+        val uid = currentUserId ?: return false
+
+        return try {
+            db.runTransaction { transaction ->
+                val ref = db.collection("projects").document(projectId)
+                val snapshot = transaction.get(ref)
+                val project = snapshot.toObject(Project::class.java) ?: return@runTransaction false
+
+                // Check Capacity
+                if (project.memberIds.size >= project.targetTeamSize) {
+                    throw Exception("Project is full")
+                }
+
+                // Check if already pending or member
+                if (project.pendingApplicantIds.contains(uid) || project.memberIds.contains(uid)) {
+                    return@runTransaction true // Already handled
+                }
+
+                // Add to pending
+                transaction.update(ref, "pendingApplicantIds", FieldValue.arrayUnion(uid))
+                true
+            }.await()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
     }
 
     suspend fun acceptJoinRequest(projectId: String, applicantId: String) {
@@ -265,5 +287,37 @@ class FirebaseRepository {
         db.collection("projects").document(projectId)
             .update("pendingApplicantIds", FieldValue.arrayRemove(applicantId))
             .await()
+    }
+
+    // --- FEATURE 1: REMOVE MEMBER ---
+    suspend fun removeMember(projectId: String, memberId: String) {
+        db.collection("projects").document(projectId)
+            .update("memberIds", FieldValue.arrayRemove(memberId))
+            .await()
+    }
+
+    // --- FEATURE 2: DELETE MILESTONE ---
+    suspend fun deleteMilestone(projectId: String, milestone: Milestone) {
+        db.runTransaction { transaction ->
+            val ref = db.collection("projects").document(projectId)
+            val snapshot = transaction.get(ref)
+            val project = snapshot.toObject(Project::class.java) ?: return@runTransaction
+
+            // Filter out the specific milestone
+            val updatedMilestones = project.milestones.filter { it.id != milestone.id }
+
+            transaction.update(ref, "milestones", updatedMilestones)
+        }.await()
+    }
+
+    // --- FEATURE 4: ADMIN ACTIONS (COMPLETE / DELETE) ---
+    suspend fun updateProjectStatus(projectId: String, status: String) {
+        db.collection("projects").document(projectId)
+            .update("status", status)
+            .await()
+    }
+
+    suspend fun deleteProject(projectId: String) {
+        db.collection("projects").document(projectId).delete().await()
     }
 }

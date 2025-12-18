@@ -30,10 +30,12 @@ import com.example.inoconnect.data.Project
 import com.example.inoconnect.ui.auth.BrandBlue
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ProjectDetailScreen(
     projectId: String,
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    onManageClick: () -> Unit // <--- NEW: Callback for creator navigation
 ) {
     val repository = remember { FirebaseRepository() }
     val context = LocalContext.current
@@ -106,6 +108,9 @@ fun ProjectDetailScreen(
             val isCreator = p.creatorId == currentUserId
             val isMember = p.memberIds.contains(currentUserId)
             val isPending = p.pendingApplicantIds.contains(currentUserId)
+
+            // New Feature: Capacity Check
+            val isFull = p.memberIds.size >= p.targetTeamSize
 
             Column(
                 modifier = Modifier
@@ -198,7 +203,6 @@ fun ProjectDetailScreen(
                                 Text("Looking For", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                                 Spacer(Modifier.height(12.dp))
 
-                                @OptIn(ExperimentalLayoutApi::class)
                                 FlowRow(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -221,22 +225,36 @@ fun ProjectDetailScreen(
                             // --- DYNAMIC ACTION BUTTON ---
                             Button(
                                 onClick = {
-                                    if (!isCreator && !isMember && !isPending) {
+                                    if (isCreator) {
+                                        onManageClick() // Redirect to Management Dashboard
+                                    } else if (!isMember && !isPending && !isFull) {
                                         scope.launch {
                                             isSendingRequest = true
-                                            repository.requestToJoinProject(projectId)
-                                            refreshProject() // Refresh UI to show "Request Sent"
+                                            val success = repository.requestToJoinProject(projectId)
                                             isSendingRequest = false
-                                            Toast.makeText(context, "Request sent!", Toast.LENGTH_SHORT).show()
+                                            if (success) {
+                                                refreshProject() // Update UI to show "Request Sent"
+                                                Toast.makeText(context, "Request sent!", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                Toast.makeText(context, "Could not join (Project Full or Error)", Toast.LENGTH_SHORT).show()
+                                            }
                                         }
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (isMember || isPending || isCreator) Color.Gray else BrandBlue
+                                    // Creator: Blue
+                                    // Full & Not Member: Red
+                                    // Member/Pending: Gray
+                                    // Joinable: Blue
+                                    containerColor = if (isCreator) BrandBlue
+                                    else if (isFull && !isMember) Color.Red.copy(alpha = 0.7f)
+                                    else if (isMember || isPending) Color.Gray
+                                    else BrandBlue
                                 ),
                                 shape = RoundedCornerShape(12.dp),
-                                enabled = !isCreator && !isMember && !isPending && !isSendingRequest
+                                // Enabled only if Creator OR (Not Member AND Not Pending AND Not Full)
+                                enabled = isCreator || (!isMember && !isPending && !isSendingRequest && !isFull)
                             ) {
                                 if (isSendingRequest) {
                                     CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
@@ -245,6 +263,7 @@ fun ProjectDetailScreen(
                                         isCreator -> "Manage Project"
                                         isMember -> "Already a Member"
                                         isPending -> "Request Sent"
+                                        isFull -> "Full Capacity"
                                         else -> "Request to Join Team"
                                     }
                                     Text(buttonText, fontSize = 16.sp, fontWeight = FontWeight.Bold)
