@@ -1,5 +1,6 @@
 package com.example.inoconnect.ui.participant
 
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -19,6 +20,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -26,22 +28,36 @@ import coil.compose.AsyncImage
 import com.example.inoconnect.data.FirebaseRepository
 import com.example.inoconnect.data.Project
 import com.example.inoconnect.ui.auth.BrandBlue
+import com.google.firebase.auth.FirebaseAuth // Make sure this import is here
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ProjectDetailScreen(
     projectId: String,
     onBackClick: () -> Unit,
-    onManageClick: () -> Unit // <--- NEW: Callback for creator navigation
+    onManageClick: () -> Unit
 ) {
     val repository = remember { FirebaseRepository() }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    // --- MISSING VARIABLES FIXED HERE ---
+    val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: ""
+    var isSendingRequest by remember { mutableStateOf(false) }
+
+    // Logic to refresh the screen
+    var refreshTrigger by remember { mutableIntStateOf(0) }
+    fun refreshProject() { refreshTrigger++ }
 
     // State
     var project by remember { mutableStateOf<Project?>(null) }
-    var creatorName by remember { mutableStateOf("Loading...") } // <--- NEW STATE
+    var creatorName by remember { mutableStateOf("Loading...") }
     var isLoading by remember { mutableStateOf(true) }
 
-    LaunchedEffect(projectId) {
+    // Added refreshTrigger to the key so it re-runs when called
+    LaunchedEffect(projectId, refreshTrigger) {
+        isLoading = true
         val fetchedProject = repository.getProjectById(projectId)
         project = fetchedProject
 
@@ -218,14 +234,15 @@ fun ProjectDetailScreen(
                             Button(
                                 onClick = {
                                     if (isCreator) {
-                                        onManageClick() // Redirect to Management Dashboard
+                                        onManageClick()
                                     } else if (!isMember && !isPending && !isFull) {
                                         scope.launch {
                                             isSendingRequest = true
+                                            // FIX: Removed 'viewModel' call and used 'repository' directly as you set it up
                                             val success = repository.requestToJoinProject(projectId)
                                             isSendingRequest = false
                                             if (success) {
-                                                refreshProject() // Update UI to show "Request Sent"
+                                                refreshProject()
                                                 Toast.makeText(context, "Request sent!", Toast.LENGTH_SHORT).show()
                                             } else {
                                                 Toast.makeText(context, "Could not join (Project Full or Error)", Toast.LENGTH_SHORT).show()
@@ -235,17 +252,12 @@ fun ProjectDetailScreen(
                                 },
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
                                 colors = ButtonDefaults.buttonColors(
-                                    // Creator: Blue
-                                    // Full & Not Member: Red
-                                    // Member/Pending: Gray
-                                    // Joinable: Blue
                                     containerColor = if (isCreator) BrandBlue
                                     else if (isFull && !isMember) Color.Red.copy(alpha = 0.7f)
                                     else if (isMember || isPending) Color.Gray
                                     else BrandBlue
                                 ),
                                 shape = RoundedCornerShape(12.dp),
-                                // Enabled only if Creator OR (Not Member AND Not Pending AND Not Full)
                                 enabled = isCreator || (!isMember && !isPending && !isSendingRequest && !isFull)
                             ) {
                                 if (isSendingRequest) {

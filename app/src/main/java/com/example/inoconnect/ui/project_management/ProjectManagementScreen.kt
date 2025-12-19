@@ -2,7 +2,7 @@ package com.example.inoconnect.ui.project_management
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable // Required for clickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,74 +16,104 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.inoconnect.data.FirebaseRepository
+import com.example.inoconnect.data.Milestone
 import com.example.inoconnect.data.Project
 import com.example.inoconnect.data.User
 import com.example.inoconnect.ui.auth.BrandBlue
 import com.example.inoconnect.ui.auth.LightGrayInput
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 @Composable
 fun ProjectManagementScreen(
     projectId: String,
     onBackClick: () -> Unit,
-    onNavigateToProfile: (String) -> Unit // <--- FIX 1: Added parameter
+    onNavigateToProfile: (String) -> Unit
 ) {
     val repository = remember { FirebaseRepository() }
     val scope = rememberCoroutineScope()
 
     var project by remember { mutableStateOf<Project?>(null) }
 
-    // User lists
     var pendingUsers by remember { mutableStateOf<List<User>>(emptyList()) }
     var memberUsers by remember { mutableStateOf<List<User>>(emptyList()) }
+    var currentUserName by remember { mutableStateOf("") }
 
     // UI State
     var selectedTab by remember { mutableIntStateOf(0) }
     var isLoading by remember { mutableStateOf(true) }
 
-    // For Chat
-    var currentUserName by remember { mutableStateOf("") }
-
-    // --- REFRESH DATA FUNCTION ---
+    // --- REFRESH DATA ---
     fun refreshData() {
         scope.launch {
             val p = repository.getProjectById(projectId)
             project = p
 
             if (p != null) {
-                if (p.pendingApplicantIds.isNotEmpty()) {
-                    pendingUsers = repository.getUsersByIds(p.pendingApplicantIds)
-                } else {
-                    pendingUsers = emptyList()
-                }
-
-                if (p.memberIds.isNotEmpty()) {
-                    memberUsers = repository.getUsersByIds(p.memberIds)
-                } else {
-                    memberUsers = emptyList()
-                }
+                pendingUsers = if (p.pendingApplicantIds.isNotEmpty()) repository.getUsersByIds(p.pendingApplicantIds) else emptyList()
+                memberUsers = if (p.memberIds.isNotEmpty()) repository.getUsersByIds(p.memberIds) else emptyList()
             }
 
             val uid = repository.currentUserId
             if (uid != null) {
-                val me = repository.getUserById(uid)
-                currentUserName = me?.username ?: "Unknown"
+                currentUserName = repository.getUserById(uid)?.username ?: "Unknown"
             }
-
             isLoading = false
+        }
+    }
+
+    // --- OPTIMISTIC UPDATE HANDLERS (FIXED) ---
+    val onToggleMilestone: (Milestone) -> Unit = { milestone ->
+        val currentProject = project
+        if (currentProject != null) {
+            // 1. Instant UI Update
+            val updatedList = currentProject.milestones.map {
+                if (it.id == milestone.id) it.copy(isCompleted = !it.isCompleted) else it
+            }
+            project = currentProject.copy(milestones = updatedList)
+
+            // 2. Background Sync (Detached from UI Lifecycle)
+            // Using IO Dispatcher ensures this runs even if the screen is destroyed immediately
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    repository.toggleMilestone(currentProject.projectId, milestone)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+
+    val onDeleteMilestone: (Milestone) -> Unit = { milestone ->
+        val currentProject = project
+        if (currentProject != null) {
+            // 1. Instant UI Update
+            val updatedList = currentProject.milestones.filter { it.id != milestone.id }
+            project = currentProject.copy(milestones = updatedList)
+
+            // 2. Background Sync (Detached from UI Lifecycle)
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    repository.deleteMilestone(currentProject.projectId, milestone)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
         }
     }
 
@@ -91,106 +121,92 @@ fun ProjectManagementScreen(
         refreshData()
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(Color.White)) {
-        // --- 1. Blue Curved Header ---
-        Canvas(modifier = Modifier.fillMaxWidth().height(180.dp)) {
-            val path = Path().apply {
-                moveTo(0f, 0f)
-                lineTo(size.width, 0f)
-                lineTo(size.width, size.height - 50)
-                quadraticBezierTo(size.width / 2, size.height + 50, 0f, size.height - 50)
-                close()
-            }
-            drawPath(path = path, color = BrandBlue)
+    if (isLoading || project == null) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = BrandBlue)
+        }
+    } else {
+        val p = project!!
+        val isCreator = p.creatorId == repository.currentUserId
+
+        val tabs = remember(isCreator) {
+            if (isCreator) listOf("Overview", "Milestones", "Chat", "Admin")
+            else listOf("Overview", "Milestones", "Chat")
         }
 
-        // Back Button
-        IconButton(
-            onClick = onBackClick,
-            modifier = Modifier.padding(top = 40.dp, start = 16.dp)
-        ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
-        }
+        Column(modifier = Modifier.fillMaxSize().background(Color.White)) {
 
-        // --- 2. Main Content ---
-        if (isLoading || project == null) {
-            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = BrandBlue)
-        } else {
-            val p = project!!
-            val isCreator = p.creatorId == repository.currentUserId
-
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(top = 100.dp)
-            ) {
-                // Project Title
-                Text(
-                    p.title,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    modifier = Modifier.align(Alignment.CenterHorizontally)
-                )
-
-                Spacer(modifier = Modifier.height(30.dp))
-
-                // --- TABS ---
-                ScrollableTabRow(
-                    selectedTabIndex = selectedTab,
-                    containerColor = Color.Transparent,
-                    contentColor = BrandBlue,
-                    divider = {},
-                    edgePadding = 16.dp
-                ) {
-                    Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Overview") })
-                    Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Milestones") })
-                    Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }, text = { Text("Chat") })
-                    if (isCreator) {
-                        Tab(
-                            selected = selectedTab == 3,
-                            onClick = { selectedTab = 3 },
-                            text = {
-                                val count = if (p.pendingApplicantIds.isNotEmpty()) " (${p.pendingApplicantIds.size})" else ""
-                                Text("Admin$count")
-                            }
-                        )
+            // --- 1. HEADER SECTION ---
+            Box(modifier = Modifier.fillMaxWidth().height(180.dp)) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val path = Path().apply {
+                        moveTo(0f, 0f)
+                        lineTo(size.width, 0f)
+                        lineTo(size.width, size.height - 50)
+                        quadraticBezierTo(size.width / 2, size.height + 50, 0f, size.height - 50)
+                        close()
                     }
+                    drawPath(path = path, color = BrandBlue)
                 }
 
-                // --- TAB CONTENT ---
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.White)
-                        .padding(16.dp)
+                IconButton(
+                    onClick = onBackClick,
+                    modifier = Modifier.padding(top = 40.dp, start = 16.dp).align(Alignment.TopStart)
                 ) {
-                    when (selectedTab) {
-                        0 -> OverviewTab(
-                            project = p,
-                            members = memberUsers,
-                            isCreator = isCreator,
-                            repository = repository,
-                            onRefresh = { refreshData() }
-                        )
-                        1 -> MilestonesTab(
-                            project = p,
-                            repository = repository,
-                            onRefresh = { refreshData() }
-                        )
-                        2 -> ChatTab(
-                            projectId = p.projectId,
-                            currentUserName = currentUserName
-                        )
-                        3 -> AdminTab(
-                            project = p,
-                            pendingUsers = pendingUsers,
-                            repository = repository,
-                            onProjectDeleted = onBackClick,
-                            onRefresh = { refreshData() },
-                            onViewProfile = onNavigateToProfile // <--- FIX 2: Pass parameter
-                        )
-                    }
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
+                }
+
+                Text(
+                    text = p.title,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    modifier = Modifier.align(Alignment.Center).padding(top = 20.dp, start = 40.dp, end = 40.dp)
+                )
+            }
+
+            // --- 2. TABS SECTION ---
+            TabRow(
+                selectedTabIndex = selectedTab,
+                containerColor = Color.White,
+                contentColor = BrandBlue,
+                indicator = { tabPositions ->
+                    TabRowDefaults.SecondaryIndicator(
+                        Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                        color = BrandBlue
+                    )
+                }
+            ) {
+                tabs.forEachIndexed { index, title ->
+                    Tab(
+                        selected = selectedTab == index,
+                        onClick = { selectedTab = index },
+                        text = {
+                            if (title == "Admin" && p.pendingApplicantIds.isNotEmpty()) {
+                                Text("$title (${p.pendingApplicantIds.size})")
+                            } else {
+                                Text(title)
+                            }
+                        }
+                    )
+                }
+            }
+
+            // --- 3. CONTENT SECTION ---
+            Box(
+                modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp)
+            ) {
+                when (selectedTab) {
+                    0 -> OverviewTab(p, memberUsers, isCreator, repository) { refreshData() }
+                    1 -> MilestonesTab(
+                        project = p,
+                        repository = repository,
+                        onRefresh = { refreshData() },
+                        onToggle = onToggleMilestone,
+                        onDelete = onDeleteMilestone
+                    )
+                    2 -> ChatTab(p.projectId, currentUserName)
+                    3 -> if (isCreator) AdminTab(p, pendingUsers, repository, onBackClick, { refreshData() }, onNavigateToProfile)
                 }
             }
         }
@@ -209,29 +225,16 @@ fun OverviewTab(
     onRefresh: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
-
-    // Calculate Progress
     val total = project.milestones.size
     val completed = project.milestones.count { it.isCompleted }
     val progress = if (total > 0) completed.toFloat() / total else 0f
 
-    LazyColumn(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.fillMaxSize()
-    ) {
+    LazyColumn(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxSize()) {
         item {
             Spacer(modifier = Modifier.height(20.dp))
-
-            // Circular Progress Indicator
             Box(contentAlignment = Alignment.Center, modifier = Modifier.size(150.dp)) {
                 Canvas(modifier = Modifier.size(150.dp)) {
-                    drawArc(
-                        color = LightGrayInput,
-                        startAngle = 0f,
-                        sweepAngle = 360f,
-                        useCenter = false,
-                        style = Stroke(width = 20.dp.toPx())
-                    )
+                    drawArc(color = LightGrayInput, startAngle = 0f, sweepAngle = 360f, useCenter = false, style = Stroke(width = 20.dp.toPx()))
                     drawArc(
                         color = if (project.status == "Completed") Color(0xFF4CAF50) else BrandBlue,
                         startAngle = -90f,
@@ -241,65 +244,32 @@ fun OverviewTab(
                     )
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "${(progress * 100).toInt()}%",
-                        fontSize = 32.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (project.status == "Completed") Color(0xFF4CAF50) else BrandBlue
-                    )
-                    Text(
-                        text = project.status,
-                        fontSize = 14.sp,
-                        color = Color.Gray
-                    )
+                    Text("${(progress * 100).toInt()}%", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = if (project.status == "Completed") Color(0xFF4CAF50) else BrandBlue)
+                    Text(project.status, fontSize = 14.sp, color = Color.Gray)
                 }
             }
-
             Spacer(modifier = Modifier.height(40.dp))
-
-            Text(
-                text = "Team Members (${members.size}/${project.targetTeamSize})",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.fillMaxWidth()
-            )
+            Text("Team Members (${members.size}/${project.targetTeamSize})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
             Spacer(modifier = Modifier.height(10.dp))
         }
 
-        // Member List
         items(members) { user ->
             Card(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 elevation = CardDefaults.cardElevation(2.dp)
             ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Avatar Placeholder
-                    Surface(
-                        shape = CircleShape,
-                        color = BrandBlue.copy(alpha = 0.1f),
-                        modifier = Modifier.size(40.dp)
-                    ) {
+                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Surface(shape = CircleShape, color = BrandBlue.copy(alpha = 0.1f), modifier = Modifier.size(40.dp)) {
                         Icon(Icons.Default.Person, null, tint = BrandBlue, modifier = Modifier.padding(8.dp))
                     }
-
                     Spacer(modifier = Modifier.width(12.dp))
-
                     Column(modifier = Modifier.weight(1f)) {
                         Text(user.username, fontWeight = FontWeight.SemiBold)
                         Text(user.email, fontSize = 12.sp, color = Color.Gray)
                     }
-
                     if (isCreator && user.userId != project.creatorId) {
-                        IconButton(onClick = {
-                            scope.launch {
-                                repository.removeMember(project.projectId, user.userId)
-                                onRefresh()
-                            }
-                        }) {
+                        IconButton(onClick = { scope.launch { repository.removeMember(project.projectId, user.userId); onRefresh() } }) {
                             Icon(Icons.Default.Delete, "Remove", tint = Color.Red.copy(alpha = 0.6f))
                         }
                     } else if (user.userId == project.creatorId) {
@@ -318,87 +288,161 @@ fun OverviewTab(
 fun MilestonesTab(
     project: Project,
     repository: FirebaseRepository,
-    onRefresh: () -> Unit
+    onRefresh: () -> Unit,
+    onToggle: (Milestone) -> Unit,
+    onDelete: (Milestone) -> Unit
 ) {
     var newMilestoneTitle by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
-    Column {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = newMilestoneTitle,
-                onValueChange = { newMilestoneTitle = it },
-                placeholder = { Text("Add new task...") },
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = BrandBlue,
-                    unfocusedBorderColor = Color.LightGray
-                )
+    // Sort into lists
+    val todoList = project.milestones.filter { !it.isCompleted }
+    val completedList = project.milestones.filter { it.isCompleted }
+
+    val total = project.milestones.size
+    val completedCount = project.milestones.count { it.isCompleted }
+    val progress = if (total > 0) completedCount.toFloat() / total else 0f
+
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+
+        // 1. Progress Bar Header
+        item {
+            Text(
+                text = "Project Progress: ${(progress * 100).toInt()}%",
+                style = MaterialTheme.typography.titleMedium,
+                color = BrandBlue,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 8.dp)
             )
-            IconButton(onClick = {
-                if (newMilestoneTitle.isNotBlank()) {
-                    scope.launch {
-                        repository.addMilestone(project.projectId, newMilestoneTitle)
-                        newMilestoneTitle = ""
-                        onRefresh()
-                    }
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxWidth().height(12.dp).clip(RoundedCornerShape(6.dp)),
+                color = BrandBlue,
+                trackColor = LightGrayInput
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+
+        // 2. Add New Task Input
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = newMilestoneTitle,
+                    onValueChange = { newMilestoneTitle = it },
+                    placeholder = { Text("Add new task...") },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = BrandBlue,
+                        unfocusedBorderColor = Color.LightGray
+                    )
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                FilledIconButton(
+                    onClick = {
+                        if (newMilestoneTitle.isNotBlank()) {
+                            scope.launch {
+                                repository.addMilestone(project.projectId, newMilestoneTitle)
+                                newMilestoneTitle = ""
+                                onRefresh()
+                            }
+                        }
+                    },
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = BrandBlue),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.size(50.dp)
+                ) {
+                    Icon(Icons.Default.Add, "Add")
                 }
-            }) {
-                Icon(Icons.Default.Add, "Add", tint = BrandBlue)
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+
+        // 3. "To Do" Section
+        if (todoList.isNotEmpty()) {
+            item {
+                Text("To Do", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.Black)
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+            items(todoList) { milestone ->
+                MilestoneTaskCard(milestone, false, onToggle, onDelete)
+            }
+        } else if (project.milestones.isEmpty()) {
+            item {
+                Box(modifier = Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
+                    Text("No tasks yet. Start planning!", color = Color.Gray)
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        if (project.milestones.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("No milestones yet. Add one to start!", color = Color.Gray)
+        // 4. "Completed" Section
+        if (completedList.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Completed", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.Gray)
+                Spacer(modifier = Modifier.height(8.dp))
             }
-        } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(project.milestones) { milestone ->
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (milestone.isCompleted) Color(0xFFF0F9EB) else Color.White
-                        ),
-                        elevation = CardDefaults.cardElevation(2.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp).fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Checkbox(
-                                checked = milestone.isCompleted,
-                                onCheckedChange = {
-                                    scope.launch {
-                                        repository.toggleMilestone(project.projectId, milestone)
-                                        onRefresh()
-                                    }
-                                },
-                                colors = CheckboxDefaults.colors(checkedColor = BrandBlue)
-                            )
+            items(completedList) { milestone ->
+                MilestoneTaskCard(milestone, true, onToggle, onDelete)
+            }
+        }
+    }
+}
 
-                            Text(
-                                text = milestone.title,
-                                modifier = Modifier.weight(1f),
-                                style = if (milestone.isCompleted)
-                                    MaterialTheme.typography.bodyLarge.copy(color = Color.Gray)
-                                else
-                                    MaterialTheme.typography.bodyLarge
-                            )
-
-                            IconButton(onClick = {
-                                scope.launch {
-                                    repository.deleteMilestone(project.projectId, milestone)
-                                    onRefresh()
-                                }
-                            }) {
-                                Icon(Icons.Default.Close, "Delete", tint = Color.Gray)
-                            }
-                        }
+@Composable
+fun MilestoneTaskCard(
+    milestone: Milestone,
+    isCompleted: Boolean,
+    onToggle: (Milestone) -> Unit,
+    onDelete: (Milestone) -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isCompleted) Color(0xFFF5F5F5) else Color.White
+        ),
+        elevation = CardDefaults.cardElevation(if (isCompleted) 0.dp else 2.dp),
+        shape = RoundedCornerShape(12.dp),
+        border = if (isCompleted) null else androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEEEEEE))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onToggle(milestone) }
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .background(if (isCompleted) BrandBlue else Color.Transparent)
+                    .then(if (!isCompleted) Modifier.background(Color.LightGray.copy(alpha = 0.2f)) else Modifier),
+                contentAlignment = Alignment.Center
+            ) {
+                if (isCompleted) {
+                    Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                } else {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        drawCircle(color = Color.Gray, style = Stroke(width = 2.dp.toPx()))
                     }
                 }
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Text(
+                text = milestone.title,
+                fontSize = 16.sp,
+                textDecoration = if (isCompleted) TextDecoration.LineThrough else null,
+                color = if (isCompleted) Color.Gray else Color.Black,
+                modifier = Modifier.weight(1f)
+            )
+
+            IconButton(onClick = { onDelete(milestone) }, modifier = Modifier.size(24.dp)) {
+                Icon(Icons.Default.Close, "Delete", tint = Color.LightGray)
             }
         }
     }
@@ -414,7 +458,7 @@ fun AdminTab(
     repository: FirebaseRepository,
     onProjectDeleted: () -> Unit,
     onRefresh: () -> Unit,
-    onViewProfile: (String) -> Unit // <--- FIX 3: Added parameter
+    onViewProfile: (String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
 
@@ -441,12 +485,7 @@ fun AdminTab(
                 }
 
                 Button(
-                    onClick = {
-                        scope.launch {
-                            repository.deleteProject(project.projectId)
-                            onProjectDeleted()
-                        }
-                    },
+                    onClick = { scope.launch { repository.deleteProject(project.projectId); onProjectDeleted() } },
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
                 ) {
@@ -480,27 +519,16 @@ fun AdminTab(
                         Icon(Icons.Default.Person, null, tint = Color.Gray)
                         Spacer(modifier = Modifier.width(8.dp))
 
-                        // FIX 4: Made user info clickable to view profile
                         Column(modifier = Modifier.weight(1f).clickable { onViewProfile(user.userId) }) {
                             Text(user.username, fontWeight = FontWeight.Bold, textDecoration = TextDecoration.Underline)
                             Text("Tap to view profile", fontSize = 10.sp, color = BrandBlue)
                         }
 
-                        IconButton(onClick = {
-                            scope.launch {
-                                repository.rejectJoinRequest(project.projectId, user.userId)
-                                onRefresh()
-                            }
-                        }) {
+                        IconButton(onClick = { scope.launch { repository.rejectJoinRequest(project.projectId, user.userId); onRefresh() } }) {
                             Icon(Icons.Default.Close, "Reject", tint = Color.Red)
                         }
 
-                        IconButton(onClick = {
-                            scope.launch {
-                                repository.acceptJoinRequest(project.projectId, user.userId)
-                                onRefresh()
-                            }
-                        }) {
+                        IconButton(onClick = { scope.launch { repository.acceptJoinRequest(project.projectId, user.userId); onRefresh() } }) {
                             Icon(Icons.Default.Check, "Accept", tint = Color(0xFF4CAF50))
                         }
                     }
