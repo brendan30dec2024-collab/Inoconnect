@@ -25,6 +25,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.inoconnect.data.FirebaseRepository
 import com.example.inoconnect.ui.auth.BrandBlue
+import com.example.inoconnect.ui.profile.ProfileScreen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
