@@ -1,15 +1,15 @@
 package com.example.inoconnect.data
 
-import com.google.firebase.firestore.Query
-import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
 import android.net.Uri
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
 import com.google.firebase.storage.FirebaseStorage
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import java.util.UUID
 
@@ -20,6 +20,30 @@ class FirebaseRepository {
 
     val currentUserId: String?
         get() = auth.currentUser?.uid
+
+    // --- REAL-TIME DASHBOARD FLOW (For MyProjectScreen) ---
+    fun getUserProjectsFlow(): Flow<List<Project>> = callbackFlow {
+        val uid = currentUserId
+        if (uid == null) {
+            trySend(emptyList())
+            close()
+            return@callbackFlow
+        }
+
+        val subscription = db.collection("projects")
+            .whereArrayContains("memberIds", uid)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val projects = snapshot.toObjects(Project::class.java)
+                    trySend(projects)
+                }
+            }
+        awaitClose { subscription.remove() }
+    }
 
     // --- AUTH ---
     suspend fun registerUser(email: String, pass: String, role: String, username: String): Boolean {
@@ -51,7 +75,7 @@ class FirebaseRepository {
         auth.signOut()
     }
 
-    // --- EVENT LOGIC (Organizers) ---
+    // --- EVENT LOGIC (Restored for CreateEventScreen) ---
     suspend fun createEvent(
         title: String,
         description: String,
@@ -86,6 +110,15 @@ class FirebaseRepository {
         return snapshot.toObjects(Event::class.java)
     }
 
+    suspend fun getEventById(eventId: String): Event? {
+        return try {
+            val snapshot = db.collection("events").document(eventId).get().await()
+            snapshot.toObject(Event::class.java)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     suspend fun deleteEvent(eventId: String) {
         try {
             val snapshot = db.collection("events").document(eventId).get().await()
@@ -97,19 +130,28 @@ class FirebaseRepository {
         } catch (e: Exception) { e.printStackTrace() }
     }
 
-    // --- PROJECT LOGIC (Participants/Students) ---
+    suspend fun joinEvent(eventId: String) {
+        val uid = currentUserId ?: return
+        try {
+            db.collection("events").document(eventId)
+                .update("participantIds", FieldValue.arrayUnion(uid))
+                .await()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    // --- PROJECT LOGIC ---
     suspend fun createProject(
         title: String,
         description: String,
         imageUrl: String,
         tags: List<String>,
-        recruitmentDeadline: String, // NEW
-        targetTeamSize: Int          // NEW
+        recruitmentDeadline: String,
+        targetTeamSize: Int
     ) {
         val uid = currentUserId ?: return
         val newDoc = db.collection("projects").document()
-
-        // Auto-add creator to the members list so count starts at 1
         val initialMembers = listOf(uid)
 
         val project = Project(
@@ -131,7 +173,6 @@ class FirebaseRepository {
             val snapshot = db.collection("projects").document(projectId).get().await()
             snapshot.toObject(Project::class.java)
         } catch (e: Exception) {
-            e.printStackTrace()
             null
         }
     }
@@ -141,11 +182,9 @@ class FirebaseRepository {
             val snapshot = db.collection("users").document(userId).get().await()
             snapshot.toObject(User::class.java)
         } catch (e: Exception) {
-            e.printStackTrace()
             null
         }
     }
-
 
     suspend fun getAllProjects(): List<Project> {
         val snapshot = db.collection("projects").get().await()
@@ -160,67 +199,19 @@ class FirebaseRepository {
             ref.putFile(imageUri).await()
             ref.downloadUrl.await().toString()
         } catch (e: Exception) {
-            e.printStackTrace()
             null
-        }
-    }
-
-    // ... inside FirebaseRepository ...
-
-    suspend fun getEventById(eventId: String): Event? {
-        return try {
-            val snapshot = db.collection("events").document(eventId).get().await()
-            snapshot.toObject(Event::class.java)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
-    }
-
-    suspend fun joinEvent(eventId: String) {
-        val uid = currentUserId ?: return
-        try {
-            // Adds the user's ID to the 'participantIds' array in Firestore
-            db.collection("events").document(eventId)
-                .update("participantIds", FieldValue.arrayUnion(uid))
-                .await()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    // ... inside FirebaseRepository class ...
-
-    // --- DASHBOARD: GET MY PROJECTS ---
-    suspend fun getUserProjects(): List<Project> {
-        val uid = currentUserId ?: return emptyList()
-        return try {
-            // Fetch projects where the user is EITHER the creator OR a member
-            // Note: Firestore 'array-contains' only allows one filter per query usually.
-            // For simplicity, we filter where user is in 'memberIds' (since creators should be members too)
-            val snapshot = db.collection("projects")
-                .whereArrayContains("memberIds", uid)
-                .get()
-                .await()
-            snapshot.toObjects(Project::class.java)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            emptyList()
         }
     }
 
     // --- MILESTONE LOGIC ---
     suspend fun addMilestone(projectId: String, title: String) {
-        val milestone = Milestone(title = title, isCompleted = false)
+        val milestone = com.example.inoconnect.data.Milestone(title = title, isCompleted = false)
         db.collection("projects").document(projectId)
             .update("milestones", FieldValue.arrayUnion(milestone))
             .await()
     }
 
-    suspend fun toggleMilestone(projectId: String, milestone: Milestone) {
-        // To update an item in an array, we typically remove the old and add the new
-        // OR read-modify-write. Firestore doesn't support updating a specific index easily.
-        // Simple approach: Read, modify list, write back.
+    suspend fun toggleMilestone(projectId: String, milestone: com.example.inoconnect.data.Milestone) {
         db.runTransaction { transaction ->
             val ref = db.collection("projects").document(projectId)
             val snapshot = transaction.get(ref)
@@ -229,7 +220,17 @@ class FirebaseRepository {
             val updatedMilestones = project.milestones.map {
                 if (it.id == milestone.id) it.copy(isCompleted = !it.isCompleted) else it
             }
+            transaction.update(ref, "milestones", updatedMilestones)
+        }.await()
+    }
 
+    suspend fun deleteMilestone(projectId: String, milestone: com.example.inoconnect.data.Milestone) {
+        db.runTransaction { transaction ->
+            val ref = db.collection("projects").document(projectId)
+            val snapshot = transaction.get(ref)
+            val project = snapshot.toObject(Project::class.java) ?: return@runTransaction
+
+            val updatedMilestones = project.milestones.filter { it.id != milestone.id }
             transaction.update(ref, "milestones", updatedMilestones)
         }.await()
     }
@@ -237,55 +238,27 @@ class FirebaseRepository {
     // --- JOIN REQUEST LOGIC ---
     suspend fun requestToJoinProject(projectId: String): Boolean {
         val uid = currentUserId ?: return false
-
         return try {
             db.runTransaction { transaction ->
                 val ref = db.collection("projects").document(projectId)
                 val snapshot = transaction.get(ref)
                 val project = snapshot.toObject(Project::class.java) ?: return@runTransaction false
 
-                // Check Capacity
-                if (project.memberIds.size >= project.targetTeamSize) {
-                    throw Exception("Project is full")
-                }
+                if (project.memberIds.size >= project.targetTeamSize) throw Exception("Full")
+                if (project.pendingApplicantIds.contains(uid) || project.memberIds.contains(uid)) return@runTransaction true
 
-                // Check if already pending or member
-                if (project.pendingApplicantIds.contains(uid) || project.memberIds.contains(uid)) {
-                    return@runTransaction true // Already handled
-                }
-
-                // Add to pending
                 transaction.update(ref, "pendingApplicantIds", FieldValue.arrayUnion(uid))
                 true
             }.await()
-        } catch (e: Exception) {
-            e.printStackTrace()
-            false
-        }
+        } catch (e: Exception) { false }
     }
 
     suspend fun acceptJoinRequest(projectId: String, applicantId: String) {
         val ref = db.collection("projects").document(projectId)
         db.runTransaction { transaction ->
-            // 1. Remove from pending
             transaction.update(ref, "pendingApplicantIds", FieldValue.arrayRemove(applicantId))
-            // 2. Add to members
             transaction.update(ref, "memberIds", FieldValue.arrayUnion(applicantId))
         }.await()
-    }
-
-    // ... inside FirebaseRepository ...
-
-    // --- ADMIN LOGIC ---
-    suspend fun getUsersByIds(userIds: List<String>): List<User> {
-        if (userIds.isEmpty()) return emptyList()
-        // Firestore 'in' queries are limited to 10 items.
-        // For production, you'd batch this. For now, we'll fetch individually (simple prototype).
-        return userIds.mapNotNull { uid ->
-            try {
-                db.collection("users").document(uid).get().await().toObject(User::class.java)
-            } catch (e: Exception) { null }
-        }
     }
 
     suspend fun rejectJoinRequest(projectId: String, applicantId: String) {
@@ -294,103 +267,57 @@ class FirebaseRepository {
             .await()
     }
 
-    // --- FEATURE 1: REMOVE MEMBER ---
+    // --- ADMIN LOGIC ---
+    suspend fun getUsersByIds(userIds: List<String>): List<User> {
+        if (userIds.isEmpty()) return emptyList()
+        return userIds.mapNotNull { uid ->
+            try {
+                db.collection("users").document(uid).get().await().toObject(User::class.java)
+            } catch (e: Exception) { null }
+        }
+    }
+
     suspend fun removeMember(projectId: String, memberId: String) {
         db.collection("projects").document(projectId)
             .update("memberIds", FieldValue.arrayRemove(memberId))
             .await()
     }
 
-    // --- FEATURE 2: DELETE MILESTONE ---
-    suspend fun deleteMilestone(projectId: String, milestone: Milestone) {
-        db.runTransaction { transaction ->
-            val ref = db.collection("projects").document(projectId)
-            val snapshot = transaction.get(ref)
-            val project = snapshot.toObject(Project::class.java) ?: return@runTransaction
-
-            // Filter out the specific milestone
-            val updatedMilestones = project.milestones.filter { it.id != milestone.id }
-
-            transaction.update(ref, "milestones", updatedMilestones)
-        }.await()
-    }
-
-    // --- FEATURE 4: ADMIN ACTIONS (COMPLETE / DELETE) ---
     suspend fun updateProjectStatus(projectId: String, status: String) {
-        db.collection("projects").document(projectId)
-            .update("status", status)
-            .await()
+        db.collection("projects").document(projectId).update("status", status).await()
     }
 
     suspend fun deleteProject(projectId: String) {
         db.collection("projects").document(projectId).delete().await()
     }
 
-// ... inside FirebaseRepository class ...
-
-    // --- CHAT FEATURE ---
-
-    // 1. Send Message
+    // --- CHAT ---
     suspend fun sendMessage(projectId: String, messageText: String, senderName: String) {
         val uid = currentUserId ?: return
         val newMsgRef = db.collection("projects").document(projectId).collection("messages").document()
-
-        val message = ChatMessage(
-            id = newMsgRef.id,
-            senderId = uid,
-            senderName = senderName,
-            message = messageText,
-            timestamp = Timestamp.now()
-        )
+        val message = ChatMessage(id = newMsgRef.id, senderId = uid, senderName = senderName, message = messageText, timestamp = Timestamp.now())
         newMsgRef.set(message).await()
     }
 
-    // 2. Listen for Messages (Real-time Flow)
     fun getProjectMessages(projectId: String): Flow<List<ChatMessage>> = callbackFlow {
         val subscription = db.collection("projects").document(projectId)
             .collection("messages")
-            .orderBy("timestamp", Query.Direction.DESCENDING) // Newest first
+            .orderBy("timestamp", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    close(error)
-                    return@addSnapshotListener
-                }
-                if (snapshot != null) {
-                    val messages = snapshot.toObjects(ChatMessage::class.java)
-                    trySend(messages)
-                }
+                if (error == null && snapshot != null) trySend(snapshot.toObjects(ChatMessage::class.java))
             }
-
-        // Cancel listener when UI is closed
         awaitClose { subscription.remove() }
     }
 
-    // --- PROFILE MANAGEMENT ---
-    suspend fun updateUserProfile(
-        bio: String,
-        skills: List<String>,
-        githubLink: String,
-        imageUri: Uri?
-    ) {
+    // --- PROFILE ---
+    suspend fun updateUserProfile(bio: String, skills: List<String>, githubLink: String, imageUri: Uri?) {
         val uid = currentUserId ?: return
-
-        // 1. Upload Image if new one selected
         var finalImageUrl: String? = null
-        if (imageUri != null) {
-            finalImageUrl = uploadImage(imageUri)
-        }
+        if (imageUri != null) finalImageUrl = uploadImage(imageUri)
 
-        // 2. Prepare Updates
-        val updates = mutableMapOf<String, Any>(
-            "bio" to bio,
-            "skills" to skills,
-            "githubLink" to githubLink
-        )
-        if (finalImageUrl != null) {
-            updates["profileImageUrl"] = finalImageUrl
-        }
+        val updates = mutableMapOf<String, Any>("bio" to bio, "skills" to skills, "githubLink" to githubLink)
+        if (finalImageUrl != null) updates["profileImageUrl"] = finalImageUrl
 
-        // 3. Update Firestore
         db.collection("users").document(uid).update(updates).await()
     }
 }

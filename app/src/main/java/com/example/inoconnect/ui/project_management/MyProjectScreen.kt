@@ -29,18 +29,17 @@ fun MyProjectScreen(
     onProjectClick: (String) -> Unit
 ) {
     val repository = remember { FirebaseRepository() }
-    var myProjects by remember { mutableStateOf<List<Project>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
 
-    // Fetch Data
-    LaunchedEffect(Unit) {
-        myProjects = repository.getUserProjects()
-        isLoading = false
-    }
+    // --- CHANGE STARTS HERE ---
+    // Instead of fetching once, we "collect" the flow.
+    // This variable will now automatically update whenever the database changes.
+    val myProjects by repository.getUserProjectsFlow().collectAsState(initial = emptyList())
+    // --- CHANGE ENDS HERE ---
 
-    // Stats Logic
+    // Stats Logic (This will now auto-recalculate whenever 'myProjects' updates)
     val activeCount = myProjects.count { it.status == "Active" }
     val completedCount = myProjects.count { it.status == "Completed" }
+
     // Count total pending applicants for projects YOU created
     val pendingRequestsCount = myProjects
         .filter { it.creatorId == repository.currentUserId }
@@ -71,11 +70,10 @@ fun MyProjectScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         // --- 2. PROJECT LIST ---
-        if (isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = BrandBlue)
-            }
-        } else if (myProjects.isEmpty()) {
+        // Note: We removed the "isLoading" check because 'collectAsState' handles the stream.
+        // If the list is empty (either no projects or still loading the very first time),
+        // it will show the empty message, which is fine for this flow.
+        if (myProjects.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("You haven't joined any projects yet.", color = Color.Gray)
             }
@@ -89,6 +87,7 @@ fun MyProjectScreen(
     }
 }
 
+// Keep your existing helper composables (DashboardStatCard and MyProjectItem) below this...
 @Composable
 fun DashboardStatCard(label: String, count: String, color: Color, modifier: Modifier = Modifier) {
     Card(

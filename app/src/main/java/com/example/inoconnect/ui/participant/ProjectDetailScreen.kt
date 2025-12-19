@@ -1,6 +1,7 @@
 package com.example.inoconnect.ui.participant
 
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -27,6 +28,7 @@ import coil.compose.AsyncImage
 import com.example.inoconnect.data.FirebaseRepository
 import com.example.inoconnect.data.Project
 import com.example.inoconnect.ui.auth.BrandBlue
+import com.google.firebase.auth.FirebaseAuth // Make sure this import is here
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -37,34 +39,34 @@ fun ProjectDetailScreen(
     onManageClick: () -> Unit
 ) {
     val repository = remember { FirebaseRepository() }
-
-    val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val currentUserId = repository.currentUserId // Defined in your repository
+    val scope = rememberCoroutineScope()
 
-    // --- State ---
+    // --- MISSING VARIABLES FIXED HERE ---
+    val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: ""
+    var isSendingRequest by remember { mutableStateOf(false) }
+
+    // Logic to refresh the screen
+    var refreshTrigger by remember { mutableIntStateOf(0) }
+    fun refreshProject() { refreshTrigger++ }
+
+    // State
     var project by remember { mutableStateOf<Project?>(null) }
     var creatorName by remember { mutableStateOf("Loading...") }
     var isLoading by remember { mutableStateOf(true) }
-    var isSendingRequest by remember { mutableStateOf(false) }
 
-    // --- Helper Function ---
-    fun refreshProject() {
-        scope.launch {
-            val fetchedProject = repository.getProjectById(projectId)
-            project = fetchedProject
+    // Added refreshTrigger to the key so it re-runs when called
+    LaunchedEffect(projectId, refreshTrigger) {
+        isLoading = true
+        val fetchedProject = repository.getProjectById(projectId)
+        project = fetchedProject
 
-            if (fetchedProject != null) {
-                val user = repository.getUserById(fetchedProject.creatorId)
-                creatorName = user?.username ?: "Unknown User"
-            }
-            isLoading = false
+        // Fetch Creator Name
+        if (fetchedProject != null) {
+            val user = repository.getUserById(fetchedProject.creatorId)
+            creatorName = user?.username ?: "Unknown User"
         }
-    }
-
-    // Load data on start
-    LaunchedEffect(projectId) {
-        refreshProject()
+        isLoading = false
     }
 
     Box(
@@ -109,6 +111,8 @@ fun ProjectDetailScreen(
             val isCreator = p.creatorId == currentUserId
             val isMember = p.memberIds.contains(currentUserId)
             val isPending = p.pendingApplicantIds.contains(currentUserId)
+
+            // New Feature: Capacity Check
             val isFull = p.memberIds.size >= p.targetTeamSize
 
             Column(
@@ -118,6 +122,7 @@ fun ProjectDetailScreen(
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                // Header Text
                 Text(
                     text = "Project Details",
                     fontSize = 24.sp,
@@ -126,6 +131,7 @@ fun ProjectDetailScreen(
                     modifier = Modifier.padding(bottom = 20.dp)
                 )
 
+                // Floating Card
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -136,6 +142,7 @@ fun ProjectDetailScreen(
                     shape = RoundedCornerShape(24.dp)
                 ) {
                     Column {
+                        // Image Header
                         if (p.imageUrl.isNotBlank()) {
                             AsyncImage(
                                 model = p.imageUrl,
@@ -157,8 +164,11 @@ fun ProjectDetailScreen(
                             }
                         }
 
+                        // Content Body
                         Column(modifier = Modifier.padding(24.dp)) {
                             Text(p.title, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+
+                            // --- NEW: Creator Name ---
                             Text(
                                 text = "Created by $creatorName",
                                 fontSize = 14.sp,
@@ -168,13 +178,16 @@ fun ProjectDetailScreen(
 
                             Spacer(Modifier.height(16.dp))
 
+                            // Stats Row
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                // Team Size
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Default.Person, null, tint = BrandBlue, modifier = Modifier.size(20.dp))
                                     Spacer(Modifier.width(8.dp))
                                     Text("${p.memberIds.size}/${p.targetTeamSize} Members", fontSize = 14.sp)
                                 }
 
+                                // Deadline
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Default.DateRange, null, tint = BrandBlue, modifier = Modifier.size(20.dp))
                                     Spacer(Modifier.width(8.dp))
@@ -186,12 +199,14 @@ fun ProjectDetailScreen(
                             HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f))
                             Spacer(Modifier.height(16.dp))
 
+                            // Description
                             Text("About Project", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                             Spacer(Modifier.height(8.dp))
                             Text(p.description, fontSize = 14.sp, color = Color.Gray, lineHeight = 22.sp)
 
                             Spacer(Modifier.height(24.dp))
 
+                            // Looking For Tags
                             if (p.tags.isNotEmpty()) {
                                 Text("Looking For", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                                 Spacer(Modifier.height(12.dp))
@@ -206,7 +221,8 @@ fun ProjectDetailScreen(
                                             label = { Text(tag, color = BrandBlue, fontWeight = FontWeight.Medium) },
                                             colors = SuggestionChipDefaults.suggestionChipColors(
                                                 containerColor = BrandBlue.copy(alpha = 0.1f)
-                                            )
+                                            ),
+                                            border = BorderStroke(1.dp, BrandBlue.copy(alpha = 0.3f))
                                         )
                                     }
                                 }
@@ -222,6 +238,7 @@ fun ProjectDetailScreen(
                                     } else if (!isMember && !isPending && !isFull) {
                                         scope.launch {
                                             isSendingRequest = true
+                                            // FIX: Removed 'viewModel' call and used 'repository' directly as you set it up
                                             val success = repository.requestToJoinProject(projectId)
                                             isSendingRequest = false
                                             if (success) {
