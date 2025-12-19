@@ -12,8 +12,10 @@ import com.example.inoconnect.ui.organizer.OrganizerDashboard
 import com.example.inoconnect.ui.participant.CreateProjectScreen
 import com.example.inoconnect.ui.participant.EventDetailScreen
 import com.example.inoconnect.ui.participant.ParticipantMainScreen
+import com.example.inoconnect.ui.participant.ProfileScreen
 import com.example.inoconnect.ui.participant.ProjectDetailScreen
-import com.example.inoconnect.ui.project_management.ProjectManagementScreen // Make sure to import this!
+import com.example.inoconnect.ui.participant.PublicProfileScreen
+import com.example.inoconnect.ui.project_management.ProjectManagementScreen
 
 @Composable
 fun AppNavigation() {
@@ -65,12 +67,8 @@ fun AppNavigation() {
         composable("participant_main") {
             ParticipantMainScreen(
                 rootNavController = navController,
-                onEventClick = { eventId ->
-                    navController.navigate("event_detail/$eventId")
-                },
-                onProjectClick = { projectId ->
-                    navController.navigate("project_detail/$projectId")
-                }
+                onEventClick = { eventId -> navController.navigate("event_detail/$eventId") },
+                onProjectClick = { projectId -> navController.navigate("project_detail/$projectId") }
             )
         }
 
@@ -89,15 +87,21 @@ fun AppNavigation() {
             )
         }
 
-        // --- Project Detail ---
         composable("project_detail/{projectId}") { backStackEntry ->
             val projectId = backStackEntry.arguments?.getString("projectId") ?: ""
             ProjectDetailScreen(
                 projectId = projectId,
                 onBackClick = { navController.popBackStack() },
-                onManageClick = {
-                    navController.navigate("project_management/$projectId")
-                }
+                onManageClick = { navController.navigate("project_management/$projectId") }
+            )
+        }
+
+        // --- Profile Management ---
+        composable("public_profile/{userId}") { backStackEntry ->
+            val uid = backStackEntry.arguments?.getString("userId") ?: ""
+            PublicProfileScreen(
+                userId = uid,
+                onBackClick = { navController.popBackStack() }
             )
         }
 
@@ -106,7 +110,11 @@ fun AppNavigation() {
             val projectId = backStackEntry.arguments?.getString("projectId") ?: ""
             ProjectManagementScreen(
                 projectId = projectId,
-                onBackClick = { navController.popBackStack() }
+                onBackClick = { navController.popBackStack() },
+                // FIX: Added the missing callback here
+                onNavigateToProfile = { userId ->
+                    navController.navigate("public_profile/$userId")
+                }
             )
         }
     }

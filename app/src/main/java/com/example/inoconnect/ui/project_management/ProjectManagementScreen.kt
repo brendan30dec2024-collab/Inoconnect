@@ -2,6 +2,7 @@ package com.example.inoconnect.ui.project_management
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable // Required for clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -24,6 +25,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.inoconnect.data.FirebaseRepository
@@ -36,11 +38,11 @@ import kotlinx.coroutines.launch
 @Composable
 fun ProjectManagementScreen(
     projectId: String,
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    onNavigateToProfile: (String) -> Unit // <--- FIX 1: Added parameter
 ) {
     val repository = remember { FirebaseRepository() }
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
 
     var project by remember { mutableStateOf<Project?>(null) }
 
@@ -62,14 +64,12 @@ fun ProjectManagementScreen(
             project = p
 
             if (p != null) {
-                // Fetch Pending Applicants
                 if (p.pendingApplicantIds.isNotEmpty()) {
                     pendingUsers = repository.getUsersByIds(p.pendingApplicantIds)
                 } else {
                     pendingUsers = emptyList()
                 }
 
-                // Fetch Current Members
                 if (p.memberIds.isNotEmpty()) {
                     memberUsers = repository.getUsersByIds(p.memberIds)
                 } else {
@@ -77,7 +77,6 @@ fun ProjectManagementScreen(
                 }
             }
 
-            // Fetch Current User Name (for Chat)
             val uid = repository.currentUserId
             if (uid != null) {
                 val me = repository.getUserById(uid)
@@ -188,7 +187,8 @@ fun ProjectManagementScreen(
                             pendingUsers = pendingUsers,
                             repository = repository,
                             onProjectDeleted = onBackClick,
-                            onRefresh = { refreshData() }
+                            onRefresh = { refreshData() },
+                            onViewProfile = onNavigateToProfile // <--- FIX 2: Pass parameter
                         )
                     }
                 }
@@ -248,7 +248,7 @@ fun OverviewTab(
                         color = if (project.status == "Completed") Color(0xFF4CAF50) else BrandBlue
                     )
                     Text(
-                        text = project.status, // "Active" or "Completed"
+                        text = project.status,
                         fontSize = 14.sp,
                         color = Color.Gray
                     )
@@ -293,7 +293,6 @@ fun OverviewTab(
                         Text(user.email, fontSize = 12.sp, color = Color.Gray)
                     }
 
-                    // Remove Button (Only for Creator, cannot remove self)
                     if (isCreator && user.userId != project.creatorId) {
                         IconButton(onClick = {
                             scope.launch {
@@ -325,7 +324,6 @@ fun MilestonesTab(
     val scope = rememberCoroutineScope()
 
     Column {
-        // Input Area
         Row(verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
                 value = newMilestoneTitle,
@@ -353,7 +351,6 @@ fun MilestonesTab(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Milestones List
         if (project.milestones.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("No milestones yet. Add one to start!", color = Color.Gray)
@@ -391,7 +388,6 @@ fun MilestonesTab(
                                     MaterialTheme.typography.bodyLarge
                             )
 
-                            // Delete Milestone
                             IconButton(onClick = {
                                 scope.launch {
                                     repository.deleteMilestone(project.projectId, milestone)
@@ -417,18 +413,17 @@ fun AdminTab(
     pendingUsers: List<User>,
     repository: FirebaseRepository,
     onProjectDeleted: () -> Unit,
-    onRefresh: () -> Unit
+    onRefresh: () -> Unit,
+    onViewProfile: (String) -> Unit // <--- FIX 3: Added parameter
 ) {
     val scope = rememberCoroutineScope()
 
     LazyColumn {
-        // Section 1: Project Actions
         item {
             Text("Project Actions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(12.dp))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Toggle Completion
                 Button(
                     onClick = {
                         scope.launch {
@@ -445,12 +440,11 @@ fun AdminTab(
                     Text(if(project.status == "Active") "Mark Complete" else "Mark Active")
                 }
 
-                // Delete Project
                 Button(
                     onClick = {
                         scope.launch {
                             repository.deleteProject(project.projectId)
-                            onProjectDeleted() // Navigate back
+                            onProjectDeleted()
                         }
                     },
                     modifier = Modifier.weight(1f),
@@ -465,7 +459,6 @@ fun AdminTab(
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        // Section 2: Join Requests
         item {
             Text("Pending Requests", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(8.dp))
@@ -487,12 +480,12 @@ fun AdminTab(
                         Icon(Icons.Default.Person, null, tint = Color.Gray)
                         Spacer(modifier = Modifier.width(8.dp))
 
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(user.username, fontWeight = FontWeight.Bold)
-                            Text(user.email, fontSize = 12.sp, color = Color.Gray)
+                        // FIX 4: Made user info clickable to view profile
+                        Column(modifier = Modifier.weight(1f).clickable { onViewProfile(user.userId) }) {
+                            Text(user.username, fontWeight = FontWeight.Bold, textDecoration = TextDecoration.Underline)
+                            Text("Tap to view profile", fontSize = 10.sp, color = BrandBlue)
                         }
 
-                        // Reject
                         IconButton(onClick = {
                             scope.launch {
                                 repository.rejectJoinRequest(project.projectId, user.userId)
@@ -502,7 +495,6 @@ fun AdminTab(
                             Icon(Icons.Default.Close, "Reject", tint = Color.Red)
                         }
 
-                        // Accept
                         IconButton(onClick = {
                             scope.launch {
                                 repository.acceptJoinRequest(project.projectId, user.userId)

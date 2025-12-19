@@ -103,7 +103,7 @@ fun CreateEventScreen(
             // Event Date
             OutlinedTextField(
                 value = eventDate,
-                onValueChange = {}, // Read only, set by dialog
+                onValueChange = {},
                 label = { Text("Event Date") },
                 modifier = Modifier.fillMaxWidth(),
                 readOnly = true,

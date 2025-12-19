@@ -4,7 +4,11 @@ data class User(
     val userId: String = "",
     val email: String = "",
     val role: String = "",
-    val username: String = "" // <--- NEW FIELD
+    val username: String = "",
+    val bio: String = "",
+    val skills: List<String> = emptyList(),
+    val githubLink: String = "",
+    val profileImageUrl: String = ""
 )
 object UserRole {
     const val ORGANIZER = "ORGANIZER"

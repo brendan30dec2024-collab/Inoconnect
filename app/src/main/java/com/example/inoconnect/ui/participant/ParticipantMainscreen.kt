@@ -25,6 +25,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.inoconnect.data.FirebaseRepository
 import com.example.inoconnect.ui.auth.BrandBlue
+import com.example.inoconnect.ui.participant.PublicProfileScreen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -165,6 +166,14 @@ fun ParticipantMainScreen(
                     onProjectClick = { projectId ->
                         // Placeholder: We will route this to the detailed Management Screen next
                         rootNavController.navigate("project_management/$projectId")
+                    }
+                )
+            }
+
+            composable("profile") {
+                ProfileScreen(
+                    onLogout = {
+                        rootNavController.navigate("login") { popUpTo(0) }
                     }
                 )
             }

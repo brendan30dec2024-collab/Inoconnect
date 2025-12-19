@@ -364,4 +364,33 @@ class FirebaseRepository {
         // Cancel listener when UI is closed
         awaitClose { subscription.remove() }
     }
+
+    // --- PROFILE MANAGEMENT ---
+    suspend fun updateUserProfile(
+        bio: String,
+        skills: List<String>,
+        githubLink: String,
+        imageUri: Uri?
+    ) {
+        val uid = currentUserId ?: return
+
+        // 1. Upload Image if new one selected
+        var finalImageUrl: String? = null
+        if (imageUri != null) {
+            finalImageUrl = uploadImage(imageUri)
+        }
+
+        // 2. Prepare Updates
+        val updates = mutableMapOf<String, Any>(
+            "bio" to bio,
+            "skills" to skills,
+            "githubLink" to githubLink
+        )
+        if (finalImageUrl != null) {
+            updates["profileImageUrl"] = finalImageUrl
+        }
+
+        // 3. Update Firestore
+        db.collection("users").document(uid).update(updates).await()
+    }
 }
