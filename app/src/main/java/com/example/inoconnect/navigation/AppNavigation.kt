@@ -12,9 +12,8 @@ import com.example.inoconnect.ui.organizer.OrganizerDashboard
 import com.example.inoconnect.ui.participant.CreateProjectScreen
 import com.example.inoconnect.ui.participant.EventDetailScreen
 import com.example.inoconnect.ui.participant.ParticipantMainScreen
-import com.example.inoconnect.ui.participant.ProfileScreen
 import com.example.inoconnect.ui.participant.ProjectDetailScreen
-import com.example.inoconnect.ui.participant.PublicProfileScreen
+import com.example.inoconnect.ui.profile.PublicProfileScreen
 import com.example.inoconnect.ui.project_management.ProjectManagementScreen
 
 @Composable
