@@ -41,7 +41,7 @@ import kotlinx.coroutines.delay
 @Composable
 fun ParticipantHome(
     onEventClick: (String) -> Unit,
-    onProjectClick: (String) -> Unit, // <--- NEW PARAMETER
+    onProjectClick: (String) -> Unit,
     onCreateProjectClick: () -> Unit
 ) {
     val repository = remember { FirebaseRepository() }
@@ -294,92 +294,105 @@ fun ProjectList(
     projects: List<Project>,
     searchQuery: String,
     isSortedAsc: Boolean,
-    onProjectClick: (String) -> Unit // <--- NEW CALLBACK
+    onProjectClick: (String) -> Unit
 ) {
-    val filteredProjects = projects.filter {
-        it.title.contains(searchQuery, ignoreCase = true) ||
-                it.tags.any { tag -> tag.contains(searchQuery, ignoreCase = true) }
+    // --- UPDATED FILTER LOGIC ---
+    val filteredProjects = projects.filter { project ->
+        val matchesSearch = project.title.contains(searchQuery, ignoreCase = true) ||
+                project.tags.any { tag -> tag.contains(searchQuery, ignoreCase = true) }
+
+        // HIDE projects that are full
+        val isNotFull = project.memberIds.size < project.targetTeamSize
+
+        matchesSearch && isNotFull
     }.let { list ->
         if (isSortedAsc) list.sortedBy { it.title } else list
     }
 
-    LazyColumn(contentPadding = PaddingValues(top = 16.dp, bottom = 80.dp)) {
-        items(filteredProjects) { project ->
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 12.dp)
-                    .clickable { onProjectClick(project.projectId) }, // <--- TRIGGER CLICK
-                elevation = CardDefaults.cardElevation(2.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(verticalAlignment = Alignment.Top) {
-                        // 1. Thumbnail
-                        if (project.imageUrl.isNotEmpty()) {
-                            AsyncImage(
-                                model = project.imageUrl,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .size(70.dp)
-                                    .clip(RoundedCornerShape(8.dp)),
-                                contentScale = ContentScale.Crop
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                        }
-
-                        // 2. Main Info (Title, Team Size, Deadline)
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(project.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-
-                            Spacer(modifier = Modifier.height(6.dp))
-
-                            // Team Size: "2/5 Team Members"
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Person, null, modifier = Modifier.size(14.dp), tint = Color.Gray)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "${project.memberIds.size}/${project.targetTeamSize} Team Members",
-                                    fontSize = 12.sp,
-                                    color = Color.Gray
+    if (filteredProjects.isEmpty()) {
+        Box(modifier = Modifier.fillMaxWidth().padding(top = 40.dp), contentAlignment = Alignment.Center) {
+            Text("No available projects found.", color = Color.Gray)
+        }
+    } else {
+        LazyColumn(contentPadding = PaddingValues(top = 16.dp, bottom = 80.dp)) {
+            items(filteredProjects) { project ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp)
+                        .clickable { onProjectClick(project.projectId) },
+                    elevation = CardDefaults.cardElevation(2.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.Top) {
+                            // 1. Thumbnail
+                            if (project.imageUrl.isNotEmpty()) {
+                                AsyncImage(
+                                    model = project.imageUrl,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .size(70.dp)
+                                        .clip(RoundedCornerShape(8.dp)),
+                                    contentScale = ContentScale.Crop
                                 )
+                                Spacer(modifier = Modifier.width(12.dp))
                             }
 
-                            Spacer(modifier = Modifier.height(4.dp))
+                            // 2. Main Info (Title, Team Size, Deadline)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(project.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
-                            // Deadline
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.DateRange, null, modifier = Modifier.size(14.dp), tint = Color.Gray)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "Deadline: ${project.recruitmentDeadline}",
-                                    fontSize = 12.sp,
-                                    color = Color.Gray
-                                )
-                            }
-                        }
-                    }
+                                Spacer(modifier = Modifier.height(6.dp))
 
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // 3. "Looking For" Tags
-                    if (project.tags.isNotEmpty()) {
-                        Text("Looking for:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandBlue)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            items(project.tags) { role ->
-                                SuggestionChip(
-                                    onClick = { },
-                                    label = { Text(role, fontSize = 10.sp) },
-                                    modifier = Modifier.height(26.dp),
-                                    colors = SuggestionChipDefaults.suggestionChipColors(
-                                        containerColor = BrandBlue.copy(alpha = 0.05f)
-                                    ),
-                                    border = SuggestionChipDefaults.suggestionChipBorder(
-                                        enabled = true,
-                                        borderColor = BrandBlue.copy(alpha = 0.2f)
+                                // Team Size: "2/5 Team Members"
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Person, null, modifier = Modifier.size(14.dp), tint = Color.Gray)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "${project.memberIds.size}/${project.targetTeamSize} Team Members",
+                                        fontSize = 12.sp,
+                                        color = Color.Gray
                                     )
-                                )
+                                }
+
+                                Spacer(modifier = Modifier.height(4.dp))
+
+                                // Deadline
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.DateRange, null, modifier = Modifier.size(14.dp), tint = Color.Gray)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Deadline: ${project.recruitmentDeadline}",
+                                        fontSize = 12.sp,
+                                        color = Color.Gray
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // 3. "Looking For" Tags
+                        if (project.tags.isNotEmpty()) {
+                            Text("Looking for:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandBlue)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                items(project.tags) { role ->
+                                    SuggestionChip(
+                                        onClick = { },
+                                        label = { Text(role, fontSize = 10.sp) },
+                                        modifier = Modifier.height(26.dp),
+                                        colors = SuggestionChipDefaults.suggestionChipColors(
+                                            containerColor = BrandBlue.copy(alpha = 0.05f)
+                                        ),
+                                        border = SuggestionChipDefaults.suggestionChipBorder(
+
+                                            enabled = true,
+                                            borderColor = BrandBlue.copy(alpha = 0.2f)
+                                        )
+                                    )
+                                }
                             }
                         }
                     }

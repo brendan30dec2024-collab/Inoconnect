@@ -19,7 +19,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -30,7 +29,7 @@ import com.example.inoconnect.ui.auth.BrandBlue
 import com.example.inoconnect.ui.auth.LightGrayInput
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ProfileScreen(
     onLogout: () -> Unit
@@ -47,19 +46,28 @@ fun ProfileScreen(
     var showEditSheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // --- Temporary Edit State (Hoisted for Sheet) ---
+    // --- Edit Fields ---
     var editName by remember { mutableStateOf("") }
     var editHeadline by remember { mutableStateOf("") }
     var editBio by remember { mutableStateOf("") }
+    var editUniversity by remember { mutableStateOf("") }
     var editFaculty by remember { mutableStateOf("") }
     var editCourse by remember { mutableStateOf("") }
     var editYear by remember { mutableStateOf("") }
 
-    // Image Picker (Used inside Sheet)
+    // --- Image Pickers ---
+
+    // 1. Profile Photo Picker
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
-    val imageLauncher = rememberLauncherForActivityResult(
+    val profileImageLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri -> selectedImageUri = uri }
+
+    // 2. Background Photo Picker
+    var selectedBackgroundUri by remember { mutableStateOf<Uri?>(null) }
+    val backgroundImageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri -> selectedBackgroundUri = uri }
 
     fun loadUserData() {
         scope.launch {
@@ -67,11 +75,12 @@ fun ProfileScreen(
             if (uid != null) {
                 val fetchedUser = repository.getUserById(uid)
                 user = fetchedUser
-                // Pre-fill edit fields
+                // Pre-fill fields
                 fetchedUser?.let {
                     editName = it.username
                     editHeadline = it.headline
                     editBio = it.bio
+                    editUniversity = it.university
                     editFaculty = it.faculty
                     editCourse = it.course
                     editYear = it.yearOfStudy
@@ -83,23 +92,39 @@ fun ProfileScreen(
 
     LaunchedEffect(Unit) { loadUserData() }
 
-    // Save Logic
+    // --- SAVE LOGIC ---
     fun saveChanges() {
         scope.launch {
-            sheetState.hide() // Animate sheet closing
-            showEditSheet = false
+            try {
+                repository.updateUserProfileDetails(
+                    name = editName,
+                    headline = editHeadline,
+                    bio = editBio,
+                    university = editUniversity,
+                    faculty = editFaculty,
+                    course = editCourse,
+                    year = editYear,
+                    imageUri = selectedImageUri,
+                    backgroundUri = selectedBackgroundUri
+                )
 
-            // TODO: Call repository.updateUser(...) here
-            kotlinx.coroutines.delay(500) // Simulate save
+                loadUserData() // Refresh UI
+                sheetState.hide()
+                showEditSheet = false
 
-            snackbarHostState.showSnackbar("Profile Updated")
-            loadUserData()
+                // Reset local selections
+                selectedImageUri = null
+                selectedBackgroundUri = null
+
+                snackbarHostState.showSnackbar("Profile Updated Successfully")
+            } catch (e: Exception) {
+                snackbarHostState.showSnackbar("Failed to update: ${e.message}")
+            }
         }
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-        // NO TopBar here! This guarantees the layout never shifts.
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { padding ->
         if (isLoading) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -110,23 +135,44 @@ fun ProfileScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    // Apply ONLY bottom padding to avoid nav bar,
-                    // NO top padding so header hits the top edge.
                     .padding(bottom = padding.calculateBottomPadding())
                     .background(Color(0xFFF8F9FA))
                     .verticalScroll(rememberScrollState())
             ) {
                 // ================= HEADER =================
                 Box(modifier = Modifier.fillMaxWidth()) {
-                    // 1. Blue Cover
-                    Box(modifier = Modifier.fillMaxWidth().height(160.dp).background(BrandBlue))
+                    // 1. Background Cover (Blue by default, or Image)
+
+                    // FIX: Explicitly set type to Any? to handle both Uri and String
+                    val bgModel: Any? = if (selectedBackgroundUri != null) {
+                        selectedBackgroundUri
+                    } else {
+                        user?.backgroundImageUrl?.takeIf { it.isNotEmpty() }
+                    }
+
+                    Box(modifier = Modifier.fillMaxWidth().height(160.dp).background(BrandBlue)) {
+                        if (bgModel != null) {
+                            AsyncImage(
+                                model = bgModel,
+                                contentDescription = "Cover Photo",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+                    }
 
                     // 2. Avatar & Name
                     Column(
                         modifier = Modifier.fillMaxWidth().padding(top = 100.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        val imageModel = selectedImageUri ?: user?.profileImageUrl.takeIf { !it.isNullOrEmpty() }
+                        // Fix: Explicitly handle Uri vs String here too
+                        val imageModel: Any? = if (selectedImageUri != null) {
+                            selectedImageUri
+                        } else {
+                            user?.profileImageUrl?.takeIf { it.isNotEmpty() }
+                        }
+
                         AsyncImage(
                             model = imageModel,
                             contentDescription = null,
@@ -157,7 +203,7 @@ fun ProfileScreen(
 
                     Spacer(Modifier.height(16.dp))
 
-                    // EDIT BUTTON - Opens the Sheet
+                    // EDIT BUTTON
                     OutlinedButton(
                         onClick = { showEditSheet = true },
                         modifier = Modifier.fillMaxWidth(),
@@ -169,10 +215,13 @@ fun ProfileScreen(
                     Spacer(modifier = Modifier.height(24.dp))
 
                     ProfileSectionCard(title = "Academic Biodata") {
+                        InfoRow(Icons.Default.Place, "University", user?.university)
                         InfoRow(Icons.Default.Home, "Faculty", user?.faculty)
                         InfoRow(Icons.Default.List, "Course", user?.course)
                         InfoRow(Icons.Default.DateRange, "Year", user?.yearOfStudy)
+
                         HorizontalDivider(Modifier.padding(vertical = 12.dp), color = LightGrayInput)
+
                         Text("About", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         Text(user?.bio?.ifEmpty { "No bio." } ?: "", color = Color.Gray)
                     }
@@ -211,18 +260,27 @@ fun ProfileScreen(
                 Column(
                     modifier = Modifier
                         .padding(horizontal = 24.dp)
-                        .padding(bottom = 40.dp) // Extra bottom padding for sheet
+                        .padding(bottom = 40.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
                     Text("Edit Profile", fontSize = 20.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Edit Photo Option
+                    // 1. Change Profile Photo
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Profile Photo", fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.weight(1f))
-                        TextButton(onClick = { imageLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
-                            Text("Change Photo")
+                        TextButton(onClick = { profileImageLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
+                            Text("Change")
+                        }
+                    }
+
+                    // 2. Change Cover Photo
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Cover Photo", fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = { backgroundImageLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
+                            Text("Change")
                         }
                     }
 
@@ -230,6 +288,9 @@ fun ProfileScreen(
 
                     EditTextField("Full Name", editName) { editName = it }
                     EditTextField("Headline", editHeadline) { editHeadline = it }
+
+                    EditTextField("University", editUniversity) { editUniversity = it }
+
                     EditTextField("Faculty", editFaculty) { editFaculty = it }
                     EditTextField("Course", editCourse) { editCourse = it }
                     EditTextField("Year of Study", editYear) { editYear = it }

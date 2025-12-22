@@ -116,5 +116,15 @@ fun AppNavigation() {
                 }
             )
         }
+
+        // --- Direct Chat (Full Screen) ---
+        composable("direct_chat/{channelId}") { backStackEntry ->
+            val channelId = backStackEntry.arguments?.getString("channelId") ?: ""
+            com.example.inoconnect.ui.participant.DirectChatScreen(
+                channelId = channelId,
+                navController = navController
+            )
+        }
+
     }
 }

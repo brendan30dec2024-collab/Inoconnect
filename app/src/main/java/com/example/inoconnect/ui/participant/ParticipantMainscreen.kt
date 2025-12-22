@@ -1,6 +1,5 @@
 package com.example.inoconnect.ui.participant
 
-import com.example.inoconnect.ui.project_management.MyProjectScreen
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -10,7 +9,6 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,16 +24,17 @@ import androidx.navigation.compose.rememberNavController
 import com.example.inoconnect.data.FirebaseRepository
 import com.example.inoconnect.ui.auth.BrandBlue
 import com.example.inoconnect.ui.profile.ProfileScreen
+import com.example.inoconnect.ui.project_management.MyProjectScreen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ParticipantMainScreen(
     rootNavController: NavController,
     onEventClick: (String) -> Unit,
-    onProjectClick: (String) -> Unit // <--- NEW PARAMETER
+    onProjectClick: (String) -> Unit
 ) {
     val bottomNavController = rememberNavController()
-    val repository = remember { FirebaseRepository() }
+    // We don't need repository here unless for logout, which is handled in Profile
 
     Scaffold(
         topBar = {
@@ -48,28 +47,18 @@ fun ParticipantMainScreen(
                         color = BrandBlue
                     )
                 },
-                actions = {
-                    IconButton(onClick = { /* TODO: Navigate to Messages */ }) {
-                        BadgedBox(
-                            badge = { Badge { Text("3") } }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Email,
-                                contentDescription = "Messages",
-                                tint = Color.Gray
-                            )
-                        }
-                    }
-                }
+                // --- CHANGED: REMOVED ACTIONS (No top-right icon) ---
+                actions = {}
             )
         },
         bottomBar = {
             NavigationBar(containerColor = Color.White) {
-                val items = listOf("Home", "My Project", "Collab", "Connect", "Profile")
+                // --- CHANGED: Renamed 'Collab' to 'Messages' ---
+                val items = listOf("Home", "My Project", "Messages", "Connect", "Profile")
                 val icons = listOf(
                     Icons.Default.Home,
                     Icons.Default.List,
-                    Icons.Default.ThumbUp,
+                    Icons.Default.Email, // Used Email icon for Messages
                     Icons.Default.Share,
                     Icons.Default.Person
                 )
@@ -91,7 +80,7 @@ fun ParticipantMainScreen(
                             val route = when(index) {
                                 0 -> "home"
                                 1 -> "my_project"
-                                2 -> "collab"
+                                2 -> "messages" // Route name changed
                                 3 -> "connect"
                                 else -> "profile"
                             }
@@ -112,64 +101,38 @@ fun ParticipantMainScreen(
             startDestination = "home",
             modifier = Modifier.padding(innerPadding)
         ) {
-            // -- HOME --
+            // -- 1. HOME --
             composable("home") {
                 ParticipantHome(
                     onEventClick = onEventClick,
-                    onProjectClick = onProjectClick, // <--- PASS DOWN
+                    onProjectClick = onProjectClick,
                     onCreateProjectClick = {
                         rootNavController.navigate("create_project")
                     }
                 )
             }
 
-            // -- MY PROJECT --
-            composable("my_project") {
-                Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
-                    Text("My Projects Page (Coming Soon)")
-                }
-            }
-
-            // -- COLLAB --
-            composable("collab") {
-                Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
-                    Text("Collaboration Hub (Coming Soon)")
-                }
-            }
-
-            // -- CONNECT --
-            composable("connect") {
-                Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
-                    Text("Connect / Networking Page (Coming Soon)")
-                }
-            }
-
-            // -- PROFILE --
-            composable("profile") {
-                Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
-                    Button(
-                        onClick = {
-                            repository.logout()
-                            rootNavController.navigate("login") {
-                                popUpTo(0)
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
-                    ) {
-                        Text("Logout")
-                    }
-                }
-            }
-
+            // -- 2. MY PROJECT --
             composable("my_project") {
                 MyProjectScreen(
                     onProjectClick = { projectId ->
-                        // Placeholder: We will route this to the detailed Management Screen next
                         rootNavController.navigate("project_management/$projectId")
                     }
                 )
             }
 
+            // -- 3. MESSAGES (Was Collab) --
+            composable("messages") {
+                // We pass rootNavController so clicking a chat opens it full screen
+                MessagesScreen(navController = rootNavController)
+            }
+
+            // -- 4. CONNECT --
+            composable("connect") {
+                MyNetworkScreen()
+            }
+
+            // -- 5. PROFILE --
             composable("profile") {
                 ProfileScreen(
                     onLogout = {
@@ -177,7 +140,6 @@ fun ParticipantMainScreen(
                     }
                 )
             }
-
         }
     }
 }
