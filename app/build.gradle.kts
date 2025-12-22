@@ -44,15 +44,14 @@ android {
 
 dependencies {
     // --- Firebase ---
-    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation(platform("com.google.firebase:firebase-bom:34.7.0"))
     implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-auth")      // Needed for Login
     implementation("com.google.firebase:firebase-firestore") // Needed for Database
-    implementation("io.coil-kt:coil-compose:2.5.0")
     implementation("com.google.firebase:firebase-storage")
 
     // --- Navigation ---
-    implementation("androidx.navigation:navigation-compose:2.8.5")
+    implementation("androidx.navigation:navigation-compose:2.9.6")
 
     // --- Core Android & Compose ---
     implementation(libs.androidx.core.ktx)
@@ -63,6 +62,8 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("androidx.compose.material3:material3:1.3.0")
 
     // --- Testing ---
     testImplementation(libs.junit)

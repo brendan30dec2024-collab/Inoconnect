@@ -320,4 +320,317 @@ class FirebaseRepository {
 
         db.collection("users").document(uid).update(updates).await()
     }
+
+    // ==========================================
+    //       NETWORK / CONNECTION BACKEND
+    // ==========================================
+
+    // 1. Send a Connection Request
+    suspend fun sendConnectionRequest(toUserId: String): Boolean {
+        val uid = currentUserId ?: return false
+
+        // Check if request already exists
+        val existing = db.collection("connection_requests")
+            .whereEqualTo("fromUserId", uid)
+            .whereEqualTo("toUserId", toUserId)
+            .get().await()
+
+        if (!existing.isEmpty) return false // Already sent
+
+        val newRef = db.collection("connection_requests").document()
+        val request = ConnectionRequest(
+            id = newRef.id,
+            fromUserId = uid,
+            toUserId = toUserId,
+            status = "pending"
+        )
+        newRef.set(request).await()
+
+        // Auto-follow the person you connect with? (Optional, LinkedIn does this)
+        followUser(toUserId)
+        return true
+    }
+
+    // 2. Accept a Request
+    suspend fun acceptConnectionRequest(requestId: String, fromUserId: String) {
+        val currentUid = currentUserId ?: return
+
+        db.runTransaction { transaction ->
+            // A. Update Request Status to 'accepted'
+            val requestRef = db.collection("connection_requests").document(requestId)
+            transaction.update(requestRef, "status", "accepted")
+
+            // B. Add each other to 'connectionIds' list in Users collection
+            val myRef = db.collection("users").document(currentUid)
+            val otherRef = db.collection("users").document(fromUserId)
+
+            transaction.update(myRef, "connectionIds", FieldValue.arrayUnion(fromUserId))
+            transaction.update(myRef, "connectionsCount", FieldValue.increment(1))
+
+            transaction.update(otherRef, "connectionIds", FieldValue.arrayUnion(currentUid))
+            transaction.update(otherRef, "connectionsCount", FieldValue.increment(1))
+        }.await()
+    }
+
+    // 3. Follow a User
+    suspend fun followUser(targetUserId: String) {
+        val uid = currentUserId ?: return
+        val myRef = db.collection("users").document(uid)
+
+        // Add to local 'followingIds'
+        myRef.update("followingIds", FieldValue.arrayUnion(targetUserId)).await()
+        myRef.update("followingCount", FieldValue.increment(1)).await()
+    }
+
+    // 4. REAL-TIME: Get Suggested Users (Users I am NOT connected to)
+    // --- REAL-TIME SUGGESTIONS FIX ---
+    fun getSuggestedUsersFlow(): Flow<List<NetworkUser>> = callbackFlow {
+        val uid = currentUserId
+        if (uid == null) { trySend(emptyList()); close(); return@callbackFlow }
+
+        // 1. Listen to ALL Users (So we see name/photo/university changes INSTANTLY)
+        val usersListener = db.collection("users")
+            // .limit(50) // Removed limit to ensure you see your test accounts
+            .addSnapshotListener { allUsersSnap, error ->
+                if (error != null) return@addSnapshotListener
+                val allUsers = allUsersSnap?.toObjects(User::class.java) ?: emptyList()
+
+                // 2. Fetch MY User Data (To check who I am already connected with)
+                // We use a simple get() here to avoid complex nested listeners,
+                // assuming my connections don't change by magic in the background.
+                db.collection("users").document(uid).get().addOnSuccessListener { mySnap ->
+                    val myUser = mySnap.toObject(User::class.java)
+                    val myConnections = myUser?.connectionIds?.toSet() ?: emptySet()
+
+                    // 3. Fetch Pending Requests (To show 'Pending' button correctly)
+                    db.collection("connection_requests")
+                        .whereEqualTo("fromUserId", uid)
+                        .whereEqualTo("status", "pending")
+                        .get()
+                        .addOnSuccessListener { reqSnap ->
+                            val pendingSentIds = reqSnap.documents
+                                .mapNotNull { it.getString("toUserId") }
+                                .toSet()
+
+                            // 4. Filter & Map Results
+                            val suggestions = allUsers.mapNotNull { user ->
+                                // Don't suggest myself
+                                if (user.userId == uid) return@mapNotNull null
+                                // Don't suggest people I'm already connected with
+                                if (myConnections.contains(user.userId)) return@mapNotNull null
+
+                                // Check if I already sent a request
+                                val status = if (pendingSentIds.contains(user.userId)) "pending_sent" else "not_connected"
+
+                                NetworkUser(user, status)
+                            }
+
+                            // Emit the fresh list to the UI
+                            trySend(suggestions)
+                        }
+                }
+            }
+
+        // Clean up listener when screen is closed
+        awaitClose { usersListener.remove() }
+    }
+
+    // 5. REAL-TIME: Get Network Stats (Invites, Connections, Following)
+    fun getNetworkStatsFlow(): Flow<Map<String, Int>> = callbackFlow {
+        val uid = currentUserId
+        if (uid == null) { close(); return@callbackFlow }
+
+        val sub = db.collection("users").document(uid).addSnapshotListener { snapshot, _ ->
+            val user = snapshot?.toObject(User::class.java)
+            if (user != null) {
+                // We also need to count "Invites Sent" manually or store it
+                // For now, let's just return what we have in the User object
+                val stats = mapOf(
+                    "connections" to user.connectionsCount,
+                    "following" to user.followingCount
+                    // "invites" requires a separate query count, effectively
+                )
+                trySend(stats)
+            }
+        }
+        awaitClose { sub.remove() }
+    }
+
+    // ==========================================
+    //       MESSAGING & NOTIFICATIONS
+    // ==========================================
+
+    // --- 1. NOTIFICATIONS ---
+    fun getNotificationsFlow(): Flow<List<AppNotification>> = callbackFlow {
+        val uid = currentUserId
+        if (uid == null) { trySend(emptyList()); close(); return@callbackFlow }
+
+        val sub = db.collection("users").document(uid).collection("notifications")
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .addSnapshotListener { snap, _ ->
+                if (snap != null) {
+                    trySend(snap.toObjects(AppNotification::class.java))
+                }
+            }
+        awaitClose { sub.remove() }
+    }
+
+    suspend fun sendNotification(toUserId: String, type: NotificationType, title: String, message: String, relatedId: String = "") {
+        val ref = db.collection("users").document(toUserId).collection("notifications").document()
+        val notif = AppNotification(
+            id = ref.id,
+            userId = toUserId,
+            type = type,
+            title = title,
+            message = message,
+            relatedId = relatedId
+        )
+        ref.set(notif).await()
+    }
+
+    // --- 2. DIRECT MESSAGES ---
+
+    // Get list of active conversations
+    fun getChatChannelsFlow(): Flow<List<ChatChannel>> = callbackFlow {
+        val uid = currentUserId
+        if (uid == null) { trySend(emptyList()); close(); return@callbackFlow }
+
+        val sub = db.collection("chat_channels")
+            .whereArrayContains("participantIds", uid)
+            .orderBy("lastMessageTimestamp", Query.Direction.DESCENDING)
+            .addSnapshotListener { snap, _ ->
+                if (snap != null) trySend(snap.toObjects(ChatChannel::class.java))
+            }
+        awaitClose { sub.remove() }
+    }
+
+    // Get messages inside a conversation
+    fun getDirectMessagesFlow(channelId: String): Flow<List<DirectMessage>> = callbackFlow {
+        val sub = db.collection("chat_channels").document(channelId).collection("messages")
+            .orderBy("timestamp", Query.Direction.ASCENDING)
+            .addSnapshotListener { snap, _ ->
+                if (snap != null) trySend(snap.toObjects(DirectMessage::class.java))
+            }
+        awaitClose { sub.remove() }
+    }
+
+    // Send a Direct Message
+    suspend fun sendDirectMessage(toUserId: String, content: String) {
+        val uid = currentUserId ?: return
+
+        // Generate a consistent Channel ID (Sort UIDs alphabetically so UserA_UserB is same as UserB_UserA)
+        val channelId = if (uid < toUserId) "${uid}_$toUserId" else "${toUserId}_$uid"
+
+        val channelRef = db.collection("chat_channels").document(channelId)
+
+        // 1. Ensure Channel Exists or Update Last Message
+        val channelUpdate = mapOf(
+            "channelId" to channelId,
+            "participantIds" to listOf(uid, toUserId), // Ensure both are in
+            "lastMessage" to content,
+            "lastMessageTimestamp" to Timestamp.now(),
+            "lastSenderId" to uid
+        )
+        channelRef.set(channelUpdate, com.google.firebase.firestore.SetOptions.merge()).await()
+
+        // 2. Add Message
+        val msgRef = channelRef.collection("messages").document()
+        val msg = DirectMessage(
+            id = msgRef.id,
+            senderId = uid,
+            content = content
+        )
+        msgRef.set(msg).await()
+    }
+
+    // Helper to get the "Other User" details from a chat channel
+    suspend fun getOtherUserInChannel(channel: ChatChannel): User? {
+        val uid = currentUserId ?: return null
+        val otherId = channel.participantIds.find { it != uid } ?: return null
+        return getUserById(otherId)
+    }
+
+    // --- FOR "FOLLOWERS" TAB (Incoming Connection Requests) ---
+    fun getIncomingConnectionRequestsFlow(): Flow<List<ConnectionRequest>> = callbackFlow {
+        val uid = currentUserId
+        if (uid == null) { trySend(emptyList()); close(); return@callbackFlow }
+
+        val sub = db.collection("connection_requests")
+            .whereEqualTo("toUserId", uid)
+            .whereEqualTo("status", "pending")
+            .addSnapshotListener { snap, _ ->
+                if (snap != null) {
+                    trySend(snap.toObjects(ConnectionRequest::class.java))
+                }
+            }
+        awaitClose { sub.remove() }
+    }
+
+    suspend fun rejectConnectionRequest(requestId: String) {
+        db.collection("connection_requests").document(requestId).update("status", "rejected").await()
+    }
+
+    // --- FOR "INVITATIONS" TAB (Project Invites) ---
+    // Simulating accepting a project invite notification
+    suspend fun acceptProjectInvite(notificationId: String, projectId: String) {
+        val uid = currentUserId ?: return
+
+        // 1. Add user to project
+        db.collection("projects").document(projectId)
+            .update("memberIds", FieldValue.arrayUnion(uid))
+            .await()
+
+        // 2. Mark notification as read/handled
+        db.collection("users").document(uid)
+            .collection("notifications").document(notificationId)
+            .delete() // Or update to isRead = true
+            .await()
+    }
+
+    // --- FULL PROFILE UPDATE ---
+    suspend fun updateUserProfileDetails(
+        name: String,
+        headline: String,
+        bio: String,
+        university: String, // <--- NEW
+        faculty: String,
+        course: String,
+        year: String,
+        imageUri: Uri?,
+        backgroundUri: Uri? // <--- NEW
+    ) {
+        val uid = currentUserId ?: return
+
+        // 1. Upload Profile Image (if changed)
+        var finalImageUrl: String? = null
+        if (imageUri != null) {
+            finalImageUrl = uploadImage(imageUri)
+        }
+
+        // 2. Upload Background Image (if changed)
+        var finalBackgroundUrl: String? = null
+        if (backgroundUri != null) {
+            finalBackgroundUrl = uploadImage(backgroundUri)
+        }
+
+        // 3. Create Update Map
+        val updates = mutableMapOf<String, Any>(
+            "username" to name,
+            "headline" to headline,
+            "bio" to bio,
+            "university" to university, // <--- NEW
+            "faculty" to faculty,
+            "course" to course,
+            "yearOfStudy" to year
+        )
+
+        // Only update URLs if they are not null
+        if (finalImageUrl != null) updates["profileImageUrl"] = finalImageUrl
+        if (finalBackgroundUrl != null) updates["backgroundImageUrl"] = finalBackgroundUrl
+
+        // 4. Update Firestore
+        db.collection("users").document(uid).update(updates).await()
+    }
+
+
 }

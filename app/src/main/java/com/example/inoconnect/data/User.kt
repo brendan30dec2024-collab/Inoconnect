@@ -1,15 +1,16 @@
 package com.example.inoconnect.data
 
-// Update in data/User.kt
 data class User(
     val userId: String = "",
     val email: String = "",
     val role: String = "",
-    val username: String = "", // Used as Full Name
+    val username: String = "",
     val profileImageUrl: String = "",
+    val backgroundImageUrl: String = "", // <--- THIS FIXES YOUR ERROR
 
     // --- Academic Fields ---
     val headline: String = "",
+    val university: String = "", // <--- NEW FIELD
     val faculty: String = "",
     val course: String = "",
     val yearOfStudy: String = "",
@@ -29,8 +30,13 @@ data class User(
     val linkedinLink: String = "",
     val portfolioLink: String = "",
 
-    val skills: List<String> = emptyList()
+    val skills: List<String> = emptyList(),
+
+    //--- Connection ---
+    val connectionIds: List<String> = emptyList(), // List of UserIDs you are connected to
+    val followingIds: List<String> = emptyList(),   // List of UserIDs you follow
 )
+
 object UserRole {
     const val ORGANIZER = "ORGANIZER"
     const val PARTICIPANT = "PARTICIPANT"
