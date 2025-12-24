@@ -1,9 +1,13 @@
 package com.example.inoconnect.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument // --- Added
+import androidx.navigation.NavType   // --- Added
+import com.example.inoconnect.data.FirebaseRepository // --- Added
 import com.example.inoconnect.data.UserRole
 import com.example.inoconnect.ui.auth.LoginScreen
 import com.example.inoconnect.ui.auth.RegisterScreen
@@ -19,6 +23,8 @@ import com.example.inoconnect.ui.project_management.ProjectManagementScreen
 @Composable
 fun AppNavigation() {
     val navController = rememberNavController()
+    // --- Create Repository Instance to check Current User ID ---
+    val repository = remember { FirebaseRepository() }
 
     NavHost(navController = navController, startDestination = "login") {
 
@@ -27,7 +33,7 @@ fun AppNavigation() {
             LoginScreen(
                 onLoginSuccess = { role ->
                     if (role == UserRole.ORGANIZER) navController.navigate("organizer_dash")
-                    else navController.navigate("participant_main")
+                    else navController.navigate("participant_main") // Defaults to home
                 },
                 onRegisterClick = { navController.navigate("register") }
             )
@@ -62,10 +68,18 @@ fun AppNavigation() {
             )
         }
 
-        // --- Participant ---
-        composable("participant_main") {
+        // --- Participant Main (With Optional Tab Argument) ---
+        composable(
+            route = "participant_main?tab={tab}",
+            arguments = listOf(navArgument("tab") {
+                type = NavType.StringType
+                defaultValue = "home"
+            })
+        ) { backStackEntry ->
+            val tab = backStackEntry.arguments?.getString("tab") ?: "home"
             ParticipantMainScreen(
                 rootNavController = navController,
+                initialTab = tab, // --- Pass the tab ---
                 onEventClick = { eventId -> navController.navigate("event_detail/$eventId") },
                 onProjectClick = { projectId -> navController.navigate("project_detail/$projectId") }
             )
@@ -100,7 +114,10 @@ fun AppNavigation() {
             val uid = backStackEntry.arguments?.getString("userId") ?: ""
             PublicProfileScreen(
                 userId = uid,
-                onBackClick = { navController.popBackStack() }
+                onBackClick = { navController.popBackStack() },
+                onMessageClick = { channelId ->
+                    navController.navigate("direct_chat/$channelId")
+                }
             )
         }
 
@@ -110,9 +127,16 @@ fun AppNavigation() {
             ProjectManagementScreen(
                 projectId = projectId,
                 onBackClick = { navController.popBackStack() },
-                // FIX: Added the missing callback here
                 onNavigateToProfile = { userId ->
-                    navController.navigate("public_profile/$userId")
+                    val currentUserId = repository.currentUserId
+
+                    if (currentUserId != null && userId == currentUserId) {
+                        // --- BUG FIX: Navigate to "My Profile" tab if it's me ---
+                        navController.navigate("participant_main?tab=profile")
+                    } else {
+                        // Navigate to Public Profile otherwise
+                        navController.navigate("public_profile/$userId")
+                    }
                 }
             )
         }
@@ -122,7 +146,16 @@ fun AppNavigation() {
             val channelId = backStackEntry.arguments?.getString("channelId") ?: ""
             com.example.inoconnect.ui.participant.DirectChatScreen(
                 channelId = channelId,
-                navController = navController
+                navController = navController,
+                onProfileClick = { userId ->
+                    // Also apply the fix here for consistency
+                    val currentUserId = repository.currentUserId
+                    if (currentUserId != null && userId == currentUserId) {
+                        navController.navigate("participant_main?tab=profile")
+                    } else {
+                        navController.navigate("public_profile/$userId")
+                    }
+                }
             )
         }
 

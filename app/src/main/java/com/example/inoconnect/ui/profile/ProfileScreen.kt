@@ -4,11 +4,14 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -42,11 +45,13 @@ fun ProfileScreen(
     var user by remember { mutableStateOf<User?>(null) }
     var isLoading by remember { mutableStateOf(true) }
 
-    // Bottom Sheet State
+    // Bottom Sheets State
     var showEditSheet by remember { mutableStateOf(false) }
+    var showSkillsSheet by remember { mutableStateOf(false) }
+
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // --- Edit Fields ---
+    // --- Edit Fields (Main) ---
     var editName by remember { mutableStateOf("") }
     var editHeadline by remember { mutableStateOf("") }
     var editBio by remember { mutableStateOf("") }
@@ -55,15 +60,16 @@ fun ProfileScreen(
     var editCourse by remember { mutableStateOf("") }
     var editYear by remember { mutableStateOf("") }
 
-    // --- Image Pickers ---
+    // --- Edit Fields (Skills) ---
+    var tempSkills by remember { mutableStateOf<List<String>>(emptyList()) }
+    var newSkillInput by remember { mutableStateOf("") }
 
-    // 1. Profile Photo Picker
+    // --- Image Pickers ---
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
     val profileImageLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri -> selectedImageUri = uri }
 
-    // 2. Background Photo Picker
     var selectedBackgroundUri by remember { mutableStateOf<Uri?>(null) }
     val backgroundImageLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -92,33 +98,48 @@ fun ProfileScreen(
 
     LaunchedEffect(Unit) { loadUserData() }
 
-    // --- SAVE LOGIC ---
+    // --- SAVE LOGIC (Main) ---
     fun saveChanges() {
         scope.launch {
             try {
-                repository.updateUserProfileDetails(
-                    name = editName,
+                // We pass the existing skills so they aren't lost when editing other details
+                val currentSkills = user?.skills ?: emptyList()
+
+                repository.updateUserComplete(
+                    username = editName,
                     headline = editHeadline,
                     bio = editBio,
                     university = editUniversity,
                     faculty = editFaculty,
                     course = editCourse,
-                    year = editYear,
+                    yearOfStudy = editYear,
                     imageUri = selectedImageUri,
-                    backgroundUri = selectedBackgroundUri
+                    backgroundUri = selectedBackgroundUri,
+                    skills = currentSkills,
                 )
 
                 loadUserData() // Refresh UI
                 sheetState.hide()
                 showEditSheet = false
-
-                // Reset local selections
                 selectedImageUri = null
                 selectedBackgroundUri = null
-
                 snackbarHostState.showSnackbar("Profile Updated Successfully")
             } catch (e: Exception) {
                 snackbarHostState.showSnackbar("Failed to update: ${e.message}")
+            }
+        }
+    }
+
+    // --- SAVE LOGIC (Skills) ---
+    fun saveSkills() {
+        scope.launch {
+            try {
+                repository.updateUserSkills(tempSkills)
+                loadUserData()
+                showSkillsSheet = false
+                snackbarHostState.showSnackbar("Skills Updated")
+            } catch (e: Exception) {
+                snackbarHostState.showSnackbar("Error saving skills: ${e.message}")
             }
         }
     }
@@ -141,15 +162,7 @@ fun ProfileScreen(
             ) {
                 // ================= HEADER =================
                 Box(modifier = Modifier.fillMaxWidth()) {
-                    // 1. Background Cover (Blue by default, or Image)
-
-                    // FIX: Explicitly set type to Any? to handle both Uri and String
-                    val bgModel: Any? = if (selectedBackgroundUri != null) {
-                        selectedBackgroundUri
-                    } else {
-                        user?.backgroundImageUrl?.takeIf { it.isNotEmpty() }
-                    }
-
+                    val bgModel: Any? = selectedBackgroundUri ?: user?.backgroundImageUrl?.takeIf { it.isNotEmpty() }
                     Box(modifier = Modifier.fillMaxWidth().height(160.dp).background(BrandBlue)) {
                         if (bgModel != null) {
                             AsyncImage(
@@ -161,18 +174,11 @@ fun ProfileScreen(
                         }
                     }
 
-                    // 2. Avatar & Name
                     Column(
                         modifier = Modifier.fillMaxWidth().padding(top = 100.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // Fix: Explicitly handle Uri vs String here too
-                        val imageModel: Any? = if (selectedImageUri != null) {
-                            selectedImageUri
-                        } else {
-                            user?.profileImageUrl?.takeIf { it.isNotEmpty() }
-                        }
-
+                        val imageModel: Any? = selectedImageUri ?: user?.profileImageUrl?.takeIf { it.isNotEmpty() }
                         AsyncImage(
                             model = imageModel,
                             contentDescription = null,
@@ -185,10 +191,7 @@ fun ProfileScreen(
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(user?.username ?: "User", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            user?.headline?.ifEmpty { "Student" } ?: "",
-                            fontSize = 14.sp, color = Color.Gray
-                        )
+                        Text(user?.headline?.ifEmpty { "Student" } ?: "", fontSize = 14.sp, color = Color.Gray)
                     }
                 }
 
@@ -207,35 +210,54 @@ fun ProfileScreen(
                     OutlinedButton(
                         onClick = { showEditSheet = true },
                         modifier = Modifier.fillMaxWidth(),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, BrandBlue)
+                        border = BorderStroke(1.dp, BrandBlue)
                     ) {
-                        Text("Edit Profile", color = BrandBlue)
+                        Text("Edit Profile Details", color = BrandBlue)
                     }
 
                     Spacer(modifier = Modifier.height(24.dp))
 
+                    // 1. Academic Biodata
                     ProfileSectionCard(title = "Academic Biodata") {
                         InfoRow(Icons.Default.Place, "University", user?.university)
                         InfoRow(Icons.Default.Home, "Faculty", user?.faculty)
                         InfoRow(Icons.Default.List, "Course", user?.course)
                         InfoRow(Icons.Default.DateRange, "Year", user?.yearOfStudy)
-
                         HorizontalDivider(Modifier.padding(vertical = 12.dp), color = LightGrayInput)
-
                         Text("About", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         Text(user?.bio?.ifEmpty { "No bio." } ?: "", color = Color.Gray)
                     }
 
-                    if (user?.skills?.isNotEmpty() == true) {
-                        ProfileSectionCard(title = "Skills") {
+                    // 2. Skills (EDITABLE)
+                    ProfileSectionCard(
+                        title = "Skills",
+                        onEditClick = {
+                            tempSkills = user?.skills ?: emptyList()
+                            newSkillInput = ""
+                            showSkillsSheet = true
+                        }
+                    ) {
+                        if (user?.skills.isNullOrEmpty()) {
+                            Text("No skills added yet.", color = Color.Gray, fontSize = 12.sp)
+                        } else {
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 user!!.skills.forEach { skill ->
-                                    SuggestionChip(onClick = {}, label = { Text(skill) })
+                                    SuggestionChip(
+                                        onClick = {},
+                                        label = { Text(skill) },
+                                        colors = SuggestionChipDefaults.suggestionChipColors(
+                                            containerColor = Color(0xFFE3F2FD),
+                                            labelColor = BrandBlue
+                                        ),
+                                        // --- FIX: Use BorderStroke instead of ChipBorder ---
+                                        border = BorderStroke(0.dp, Color.Transparent)
+                                    )
                                 }
                             }
                         }
                     }
 
+                    // 3. Contact Information
                     ProfileSectionCard(title = "Contact Information") {
                         ContactRow(Icons.Default.Email, user?.email ?: "")
                         if (!user?.phoneNumber.isNullOrEmpty()) ContactRow(Icons.Default.Phone, user!!.phoneNumber)
@@ -250,60 +272,122 @@ fun ProfileScreen(
             }
         }
 
-        // ================= EDIT SHEET =================
+        // ================= MAIN EDIT SHEET =================
         if (showEditSheet) {
-            ModalBottomSheet(
-                onDismissRequest = { showEditSheet = false },
-                sheetState = sheetState,
-                containerColor = Color.White
-            ) {
-                Column(
-                    modifier = Modifier
-                        .padding(horizontal = 24.dp)
-                        .padding(bottom = 40.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    Text("Edit Profile", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            ModalBottomSheet(onDismissRequest = { showEditSheet = false }, sheetState = sheetState) {
+                Column(modifier = Modifier.padding(horizontal = 24.dp).padding(bottom = 40.dp).verticalScroll(rememberScrollState())) {
+                    Text("Edit Profile Details", fontSize = 20.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // 1. Change Profile Photo
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Profile Photo", fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.weight(1f))
-                        TextButton(onClick = { profileImageLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
-                            Text("Change")
-                        }
+                        TextButton(onClick = { profileImageLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) { Text("Change") }
                     }
-
-                    // 2. Change Cover Photo
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Cover Photo", fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.weight(1f))
-                        TextButton(onClick = { backgroundImageLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
-                            Text("Change")
-                        }
+                        TextButton(onClick = { backgroundImageLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) { Text("Change") }
                     }
-
                     Spacer(modifier = Modifier.height(8.dp))
 
                     EditTextField("Full Name", editName) { editName = it }
                     EditTextField("Headline", editHeadline) { editHeadline = it }
-
                     EditTextField("University", editUniversity) { editUniversity = it }
-
                     EditTextField("Faculty", editFaculty) { editFaculty = it }
                     EditTextField("Course", editCourse) { editCourse = it }
                     EditTextField("Year of Study", editYear) { editYear = it }
                     EditTextField("Bio", editBio, minLines = 3) { editBio = it }
 
                     Spacer(modifier = Modifier.height(24.dp))
+                    Button(onClick = { saveChanges() }, modifier = Modifier.fillMaxWidth().height(50.dp), colors = ButtonDefaults.buttonColors(containerColor = BrandBlue)) {
+                        Text("Save Details")
+                    }
+                }
+            }
+        }
+
+        // ================= SKILLS EDIT SHEET =================
+        if (showSkillsSheet) {
+            ModalBottomSheet(onDismissRequest = { showSkillsSheet = false }, sheetState = sheetState) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp)
+                        .padding(bottom = 50.dp)
+                ) {
+                    Text("Manage Skills", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text("Add skills to show on your profile", fontSize = 12.sp, color = Color.Gray)
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Input Row
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = newSkillInput,
+                            onValueChange = { newSkillInput = it },
+                            placeholder = { Text("e.g. Kotlin, Leadership") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                if (newSkillInput.isNotBlank() && !tempSkills.contains(newSkillInput.trim())) {
+                                    tempSkills = tempSkills + newSkillInput.trim()
+                                    newSkillInput = ""
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandBlue),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Add")
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Chip Group
+                    Text("Your Skills", fontWeight = FontWeight.SemiBold)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    if (tempSkills.isEmpty()) {
+                        Text("No skills added yet.", color = Color.Gray, fontSize = 14.sp)
+                    } else {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            tempSkills.forEach { skill ->
+                                InputChip(
+                                    selected = false,
+                                    onClick = { },
+                                    label = { Text(skill) },
+                                    trailingIcon = {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            contentDescription = "Remove",
+                                            modifier = Modifier.size(16.dp).clickable {
+                                                tempSkills = tempSkills - skill
+                                            }
+                                        )
+                                    },
+                                    colors = InputChipDefaults.inputChipColors(
+                                        containerColor = Color(0xFFF5F5F5),
+                                        labelColor = Color.Black
+                                    ),
+                                    // --- FIX: Use BorderStroke here too for consistency ---
+                                    border = BorderStroke(1.dp, Color.LightGray)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
 
                     Button(
-                        onClick = { saveChanges() },
+                        onClick = { saveSkills() },
                         modifier = Modifier.fillMaxWidth().height(50.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = BrandBlue)
                     ) {
-                        Text("Save Changes")
+                        Text("Save Skills")
                     }
                 }
             }

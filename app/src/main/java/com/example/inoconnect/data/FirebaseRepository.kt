@@ -10,6 +10,8 @@ import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.combine // --- ADDED THIS IMPORT
+import kotlinx.coroutines.flow.flowOf   // --- ADDED THIS IMPORT
 import kotlinx.coroutines.tasks.await
 import java.util.UUID
 
@@ -43,6 +45,47 @@ class FirebaseRepository {
                 }
             }
         awaitClose { subscription.remove() }
+    }
+
+    // --- NEW: CONNECTION STATUS FLOW (Fixes Sync & Pending Bugs) ---
+    fun getConnectionStatusFlow(otherUserId: String): Flow<String> {
+        val uid = currentUserId ?: return flowOf("none")
+
+        // 1. Check if already connected (Real-time listener on User document)
+        val connectedFlow = callbackFlow {
+            val listener = db.collection("users").document(uid)
+                .addSnapshotListener { snapshot, _ ->
+                    if (snapshot != null && snapshot.exists()) {
+                        val ids = snapshot.get("connectionIds") as? List<String> ?: emptyList()
+                        trySend(ids.contains(otherUserId))
+                    } else {
+                        trySend(false)
+                    }
+                }
+            awaitClose { listener.remove() }
+        }
+
+        // 2. Check if I sent a pending request (Real-time listener on Requests)
+        val pendingFlow = callbackFlow {
+            val listener = db.collection("connection_requests")
+                .whereEqualTo("fromUserId", uid)
+                .whereEqualTo("toUserId", otherUserId)
+                .whereEqualTo("status", "pending")
+                .addSnapshotListener { snapshot, _ ->
+                    // If any document exists, it means a request is pending
+                    trySend(snapshot != null && !snapshot.isEmpty)
+                }
+            awaitClose { listener.remove() }
+        }
+
+        // 3. Combine both flows to determine the final UI state
+        return combine(connectedFlow, pendingFlow) { isConnected, isPending ->
+            when {
+                isConnected -> "connected"
+                isPending -> "pending"
+                else -> "none"
+            }
+        }
     }
 
     // --- AUTH ---
@@ -205,7 +248,7 @@ class FirebaseRepository {
 
     // --- MILESTONE LOGIC ---
     suspend fun addMilestone(projectId: String, title: String) {
-        val milestone = com.example.inoconnect.data.Milestone(title = title, isCompleted = false)
+        val milestone = Milestone(title = title, isCompleted = false)
         db.collection("projects").document(projectId)
             .update("milestones", FieldValue.arrayUnion(milestone))
             .await()
@@ -307,18 +350,6 @@ class FirebaseRepository {
                 if (error == null && snapshot != null) trySend(snapshot.toObjects(ChatMessage::class.java))
             }
         awaitClose { subscription.remove() }
-    }
-
-    // --- PROFILE ---
-    suspend fun updateUserProfile(bio: String, skills: List<String>, githubLink: String, imageUri: Uri?) {
-        val uid = currentUserId ?: return
-        var finalImageUrl: String? = null
-        if (imageUri != null) finalImageUrl = uploadImage(imageUri)
-
-        val updates = mutableMapOf<String, Any>("bio" to bio, "skills" to skills, "githubLink" to githubLink)
-        if (finalImageUrl != null) updates["profileImageUrl"] = finalImageUrl
-
-        db.collection("users").document(uid).update(updates).await()
     }
 
     // ==========================================
@@ -588,43 +619,37 @@ class FirebaseRepository {
     }
 
     // --- FULL PROFILE UPDATE ---
-    suspend fun updateUserProfileDetails(
-        name: String,
+    suspend fun updateUserComplete(
+        username: String,
         headline: String,
         bio: String,
-        university: String, // <--- NEW
+        university: String,
         faculty: String,
         course: String,
-        year: String,
+        yearOfStudy: String,
+        skills: List<String>,       // merged from updateUserProfile
         imageUri: Uri?,
-        backgroundUri: Uri? // <--- NEW
+        backgroundUri: Uri?
     ) {
         val uid = currentUserId ?: return
 
-        // 1. Upload Profile Image (if changed)
-        var finalImageUrl: String? = null
-        if (imageUri != null) {
-            finalImageUrl = uploadImage(imageUri)
-        }
+        // 1. Upload Images if they exist
+        val finalImageUrl = if (imageUri != null) uploadImage(imageUri) else null
+        val finalBackgroundUrl = if (backgroundUri != null) uploadImage(backgroundUri) else null
 
-        // 2. Upload Background Image (if changed)
-        var finalBackgroundUrl: String? = null
-        if (backgroundUri != null) {
-            finalBackgroundUrl = uploadImage(backgroundUri)
-        }
-
-        // 3. Create Update Map
+        // 2. Prepare Updates Map
         val updates = mutableMapOf<String, Any>(
-            "username" to name,
+            "username" to username,
             "headline" to headline,
             "bio" to bio,
-            "university" to university, // <--- NEW
+            "university" to university,
             "faculty" to faculty,
             "course" to course,
-            "yearOfStudy" to year
+            "yearOfStudy" to yearOfStudy,
+            "skills" to skills,           // Added
         )
 
-        // Only update URLs if they are not null
+        // 3. Only add URLs if they are not null (to avoid overwriting with null)
         if (finalImageUrl != null) updates["profileImageUrl"] = finalImageUrl
         if (finalBackgroundUrl != null) updates["backgroundImageUrl"] = finalBackgroundUrl
 
@@ -632,5 +657,10 @@ class FirebaseRepository {
         db.collection("users").document(uid).update(updates).await()
     }
 
+    // --- NEW: Update Skills Only ---
+    suspend fun updateUserSkills(skills: List<String>) {
+        val uid = currentUserId ?: return
+        db.collection("users").document(uid).update("skills", skills).await()
+    }
 
 }
