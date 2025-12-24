@@ -26,19 +26,29 @@ import com.example.inoconnect.data.FirebaseRepository
 import com.example.inoconnect.data.User
 import com.example.inoconnect.ui.auth.BrandBlue
 import com.example.inoconnect.ui.auth.LightGrayInput
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PublicProfileScreen(
     userId: String,
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    onMessageClick: (String) -> Unit
 ) {
     val repository = remember { FirebaseRepository() }
+    val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
+    val currentUserId = repository.currentUserId
 
     var user by remember { mutableStateOf<User?>(null) }
     var isLoading by remember { mutableStateOf(true) }
-    var isConnected by remember { mutableStateOf(false) }
+
+    // --- NEW: CONNECTION STATUS FLOW (Fixes Sync & Pending Bugs) ---
+    // This flow automatically updates the UI when:
+    // 1. You successfully connect with the user ("connected")
+    // 2. You send a request ("pending")
+    // 3. You have no relationship ("none")
+    val connectionStatus by repository.getConnectionStatusFlow(userId).collectAsState(initial = "loading")
 
     LaunchedEffect(userId) {
         user = repository.getUserById(userId)
@@ -100,17 +110,71 @@ fun PublicProfileScreen(
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        Button(
-                            onClick = { isConnected = !isConnected },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isConnected) Color.Gray else BrandBlue
-                            ),
-                            shape = RoundedCornerShape(24.dp),
-                            modifier = Modifier.height(36.dp)
-                        ) {
-                            Icon(if (isConnected) Icons.Default.Check else Icons.Default.Add, null)
-                            Spacer(Modifier.width(8.dp))
-                            Text(if (isConnected) "Connected" else "Connect")
+                        // --- ACTION BUTTONS ROW ---
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+
+                            // 1. Connect Button (Status-aware)
+                            // Only show if it's NOT my own profile
+                            if (currentUserId != null && currentUserId != userId) {
+                                Button(
+                                    onClick = {
+                                        if (connectionStatus == "none") {
+                                            scope.launch {
+                                                repository.sendConnectionRequest(userId)
+                                            }
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = when (connectionStatus) {
+                                            "connected" -> Color.Gray
+                                            "pending" -> Color(0xFFFF9800) // Orange for pending
+                                            else -> BrandBlue
+                                        }
+                                    ),
+                                    shape = RoundedCornerShape(24.dp),
+                                    modifier = Modifier.height(36.dp),
+                                    enabled = connectionStatus != "loading" // Disable while loading
+                                ) {
+                                    val icon = when (connectionStatus) {
+                                        "connected" -> Icons.Default.Check
+                                        "pending" -> Icons.Default.Refresh // Or a clock icon
+                                        else -> Icons.Default.Add
+                                    }
+                                    val text = when (connectionStatus) {
+                                        "connected" -> "Connected"
+                                        "pending" -> "Pending"
+                                        else -> "Connect"
+                                    }
+
+                                    Icon(icon, null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(text)
+                                }
+                            }
+
+                            // 2. Message Button
+                            if (currentUserId != null && currentUserId != userId) {
+                                Button(
+                                    onClick = {
+                                        val channelId = if (currentUserId < userId)
+                                            "${currentUserId}_$userId"
+                                        else
+                                            "${userId}_$currentUserId"
+                                        onMessageClick(channelId)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color.White,
+                                        contentColor = BrandBlue
+                                    ),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, BrandBlue),
+                                    shape = RoundedCornerShape(24.dp),
+                                    modifier = Modifier.height(36.dp)
+                                ) {
+                                    Icon(Icons.Default.Email, null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Message")
+                                }
+                            }
                         }
                     }
                 }
@@ -145,7 +209,7 @@ fun PublicProfileScreen(
                     }
 
                     ProfileSectionCard(title = "Contact Information") {
-                        if (isConnected) {
+                        if (connectionStatus == "connected") {
                             ContactRow(Icons.Default.Email, u.email)
                             if (u.phoneNumber.isNotEmpty()) ContactRow(
                                 Icons.Default.Phone,

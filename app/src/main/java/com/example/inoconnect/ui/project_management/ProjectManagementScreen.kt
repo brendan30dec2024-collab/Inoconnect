@@ -88,7 +88,6 @@ fun ProjectManagementScreen(
             project = currentProject.copy(milestones = updatedList)
 
             // 2. Background Sync (Detached from UI Lifecycle)
-            // Using IO Dispatcher ensures this runs even if the screen is destroyed immediately
             CoroutineScope(Dispatchers.IO).launch {
                 try {
                     repository.toggleMilestone(currentProject.projectId, milestone)
@@ -197,7 +196,8 @@ fun ProjectManagementScreen(
                 modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp)
             ) {
                 when (selectedTab) {
-                    0 -> OverviewTab(p, memberUsers, isCreator, repository) { refreshData() }
+                    // --- CHANGED: Passed onNavigateToProfile to OverviewTab ---
+                    0 -> OverviewTab(p, memberUsers, isCreator, repository, onNavigateToProfile) { refreshData() }
                     1 -> MilestonesTab(
                         project = p,
                         repository = repository,
@@ -222,6 +222,7 @@ fun OverviewTab(
     members: List<User>,
     isCreator: Boolean,
     repository: FirebaseRepository,
+    onViewProfile: (String) -> Unit, // --- CHANGED: Added parameter ---
     onRefresh: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -260,10 +261,20 @@ fun OverviewTab(
                 elevation = CardDefaults.cardElevation(2.dp)
             ) {
                 Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Surface(shape = CircleShape, color = BrandBlue.copy(alpha = 0.1f), modifier = Modifier.size(40.dp)) {
+                    // --- CHANGED: Added clickable modifier to Surface ---
+                    Surface(
+                        shape = CircleShape,
+                        color = BrandBlue.copy(alpha = 0.1f),
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .clickable { onViewProfile(user.userId) }
+                    ) {
                         Icon(Icons.Default.Person, null, tint = BrandBlue, modifier = Modifier.padding(8.dp))
                     }
+
                     Spacer(modifier = Modifier.width(12.dp))
+
                     Column(modifier = Modifier.weight(1f)) {
                         Text(user.username, fontWeight = FontWeight.SemiBold)
                         Text(user.email, fontSize = 12.sp, color = Color.Gray)

@@ -31,10 +31,22 @@ import com.example.inoconnect.ui.project_management.MyProjectScreen
 fun ParticipantMainScreen(
     rootNavController: NavController,
     onEventClick: (String) -> Unit,
-    onProjectClick: (String) -> Unit
+    onProjectClick: (String) -> Unit,
+    initialTab: String = "home" // --- NEW PARAMETER ---
 ) {
     val bottomNavController = rememberNavController()
-    // We don't need repository here unless for logout, which is handled in Profile
+
+    // Determine initial index based on tab name
+    val initialIndex = remember(initialTab) {
+        when(initialTab) {
+            "home" -> 0
+            "my_project" -> 1
+            "messages" -> 2
+            "connect" -> 3
+            "profile" -> 4
+            else -> 0
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -47,23 +59,22 @@ fun ParticipantMainScreen(
                         color = BrandBlue
                     )
                 },
-                // --- CHANGED: REMOVED ACTIONS (No top-right icon) ---
                 actions = {}
             )
         },
         bottomBar = {
             NavigationBar(containerColor = Color.White) {
-                // --- CHANGED: Renamed 'Collab' to 'Messages' ---
                 val items = listOf("Home", "My Project", "Messages", "Connect", "Profile")
                 val icons = listOf(
                     Icons.Default.Home,
                     Icons.Default.List,
-                    Icons.Default.Email, // Used Email icon for Messages
+                    Icons.Default.Email,
                     Icons.Default.Share,
                     Icons.Default.Person
                 )
 
-                var selectedItem by remember { mutableIntStateOf(0) }
+                // Initialize state with the passed index
+                var selectedItem by remember { mutableIntStateOf(initialIndex) }
 
                 items.forEachIndexed { index, item ->
                     NavigationBarItem(
@@ -80,7 +91,7 @@ fun ParticipantMainScreen(
                             val route = when(index) {
                                 0 -> "home"
                                 1 -> "my_project"
-                                2 -> "messages" // Route name changed
+                                2 -> "messages"
                                 3 -> "connect"
                                 else -> "profile"
                             }
@@ -98,7 +109,7 @@ fun ParticipantMainScreen(
     ) { innerPadding ->
         NavHost(
             navController = bottomNavController,
-            startDestination = "home",
+            startDestination = initialTab, // --- CHANGED: Use dynamic start destination ---
             modifier = Modifier.padding(innerPadding)
         ) {
             // -- 1. HOME --
@@ -121,9 +132,8 @@ fun ParticipantMainScreen(
                 )
             }
 
-            // -- 3. MESSAGES (Was Collab) --
+            // -- 3. MESSAGES --
             composable("messages") {
-                // We pass rootNavController so clicking a chat opens it full screen
                 MessagesScreen(navController = rootNavController)
             }
 

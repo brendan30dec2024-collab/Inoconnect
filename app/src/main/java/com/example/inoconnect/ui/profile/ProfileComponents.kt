@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -18,9 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.inoconnect.ui.auth.BrandBlue
 
-// ==========================================
-//          SHARED PROFILE COMPONENTS
-// ==========================================
+// ... (ProfileStatsGrid and StatItem remain the same) ...
 
 @Composable
 fun ProfileStatsGrid(connections: Int, following: Int, projects: Int) {
@@ -34,7 +33,6 @@ fun ProfileStatsGrid(connections: Int, following: Int, projects: Int) {
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
             StatItem("Connections", connections.toString())
-            // Divider
             Box(modifier = Modifier.width(1.dp).height(40.dp).background(Color.LightGray))
             StatItem("Following", following.toString())
             Box(modifier = Modifier.width(1.dp).height(40.dp).background(Color.LightGray))
@@ -51,8 +49,13 @@ fun StatItem(label: String, value: String) {
     }
 }
 
+// --- UPDATED: Accepted onEditClick to show pencil icon ---
 @Composable
-fun ProfileSectionCard(title: String, content: @Composable () -> Unit) {
+fun ProfileSectionCard(
+    title: String,
+    onEditClick: (() -> Unit)? = null, // <--- NEW PARAMETER
+    content: @Composable () -> Unit
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -61,13 +64,32 @@ fun ProfileSectionCard(title: String, content: @Composable () -> Unit) {
         elevation = CardDefaults.cardElevation(1.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.Black)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.Black)
+
+                // Show Edit Pencil if callback is provided
+                if (onEditClick != null) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Edit $title",
+                        tint = BrandBlue,
+                        modifier = Modifier
+                            .size(20.dp)
+                            .clickable { onEditClick() }
+                    )
+                }
+            }
             Spacer(modifier = Modifier.height(12.dp))
             content()
         }
     }
 }
 
+// ... (Rest of the file: InfoRow, ContactRow, EditTextField, SocialIconBtn remains the same) ...
 @Composable
 fun InfoRow(icon: ImageVector, label: String, value: String?) {
     if (value.isNullOrEmpty()) return
