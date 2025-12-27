@@ -46,6 +46,9 @@ fun ParticipantHome(
 ) {
     val repository = remember { FirebaseRepository() }
 
+    // --- 1. SNACKBAR STATE ---
+    val snackbarHostState = remember { SnackbarHostState() }
+
     // Data State
     var events by remember { mutableStateOf<List<Event>>(emptyList()) }
     var projects by remember { mutableStateOf<List<Project>>(emptyList()) }
@@ -60,6 +63,17 @@ fun ParticipantHome(
         isLoading = false
     }
 
+    // --- 2. WELCOME TOAST/SNACKBAR TRIGGER ---
+    LaunchedEffect(Unit) {
+        // Small delay so it pops up after the screen transition
+        delay(300)
+        snackbarHostState.showSnackbar(
+            message = "Welcome back, InnoUser! 👋",
+            duration = SnackbarDuration.Short,
+            withDismissAction = true
+        )
+    }
+
     // UI State
     var selectedTab by remember { mutableIntStateOf(0) }
     var searchQuery by remember { mutableStateOf("") }
@@ -67,8 +81,22 @@ fun ParticipantHome(
 
     Scaffold(
         contentWindowInsets = WindowInsets(0.dp),
+        // --- 3. ADD SNACKBAR HOST TO SCAFFOLD ---
+        snackbarHost = {
+            SnackbarHost(hostState = snackbarHostState) { data ->
+                // Optional: Custom styling for the snackbar to match BrandBlue
+                Snackbar(
+                    snackbarData = data,
+                    containerColor = BrandBlue,
+                    contentColor = Color.White,
+                    actionColor = Color.White,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
+        },
         floatingActionButton = {
-            if (selectedTab == 1) {
+            if (selectedTab == 0) {
                 ExtendedFloatingActionButton(
                     onClick = onCreateProjectClick,
                     icon = { Icon(Icons.Default.Add, "Create") },
@@ -85,7 +113,7 @@ fun ParticipantHome(
                 .fillMaxSize()
         ) {
 
-            // --- 1. HERO SECTION (Static Banners) ---
+            // --- HERO SECTION (Static Banners) ---
             val localBanners = listOf(
                 R.mipmap.banner1,
                 R.mipmap.banner2
@@ -95,7 +123,7 @@ fun ParticipantHome(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // --- 2. TABS ---
+            // --- TABS ---
             TabRow(
                 selectedTabIndex = selectedTab,
                 containerColor = Color.White,
@@ -107,21 +135,23 @@ fun ParticipantHome(
                     )
                 }
             ) {
+                // Tab 0: Student Projects (Left)
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    text = { Text("Ongoing Events", fontWeight = FontWeight.SemiBold) }
+                    text = { Text("Student Projects", fontWeight = FontWeight.SemiBold) }
                 )
+                // Tab 1: Ongoing Events (Right)
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    text = { Text("Student Projects", fontWeight = FontWeight.SemiBold) }
+                    text = { Text("Ongoing Events", fontWeight = FontWeight.SemiBold) }
                 )
             }
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // --- 3. SEARCH ---
+            // --- SEARCH ---
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -153,15 +183,17 @@ fun ParticipantHome(
                 }
             }
 
-            // --- 4. LIST CONTENT ---
+            // --- LIST CONTENT ---
             Box(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
                 if (isLoading) {
                     CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                 } else {
                     if (selectedTab == 0) {
-                        EventList(events, searchQuery, isSortedAsc, onEventClick)
-                    } else {
+                        // Tab 0 is now Projects
                         ProjectList(projects, searchQuery, isSortedAsc, onProjectClick)
+                    } else {
+                        // Tab 1 is now Events
+                        EventList(events, searchQuery, isSortedAsc, onEventClick)
                     }
                 }
             }

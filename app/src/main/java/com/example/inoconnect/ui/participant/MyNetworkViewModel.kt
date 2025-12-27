@@ -62,4 +62,7 @@ class MyNetworkViewModel : ViewModel() {
         // Just hide it locally for this session
         _suggestedUsers.value = _suggestedUsers.value.filter { it.user.userId != userId }
     }
+
+
+
 }

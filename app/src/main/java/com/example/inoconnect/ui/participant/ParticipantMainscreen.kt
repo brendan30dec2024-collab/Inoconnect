@@ -139,7 +139,12 @@ fun ParticipantMainScreen(
 
             // -- 4. CONNECT --
             composable("connect") {
-                MyNetworkScreen()
+                MyNetworkScreen(
+                    onUserClick = { userId ->
+                        // Navigate to the public profile screen using the root controller
+                        rootNavController.navigate("public_profile/$userId")
+                    }
+                )
             }
 
             // -- 5. PROFILE --

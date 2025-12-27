@@ -1,6 +1,7 @@
 package com.example.inoconnect.ui.participant
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable // --- IMPORT ADDED
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -30,7 +31,8 @@ import com.example.inoconnect.ui.auth.BrandBlue
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MyNetworkScreen(
-    viewModel: MyNetworkViewModel = viewModel() // Auto-injects the ViewModel
+    viewModel: MyNetworkViewModel = viewModel(),
+    onUserClick: (String) -> Unit // --- ADDED: Callback for navigation
 ) {
     // Collect Real-Time Data
     val suggestedUsers by viewModel.suggestedUsers.collectAsState()
@@ -48,7 +50,7 @@ fun MyNetworkScreen(
     ) {
         // Overview Section (Real Data)
         NetworkOverviewSection(
-            invitesCount = 0, // We can add this to stats later if needed
+            invitesCount = 0,
             connectionsCount = stats["connections"] ?: 0,
             followingCount = stats["following"] ?: 0
         )
@@ -82,21 +84,21 @@ fun MyNetworkScreen(
                     // Row 1
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         if (initialUsers.isNotEmpty()) {
-                            UserCard(initialUsers[0], Modifier.weight(1f), viewModel)
+                            UserCard(initialUsers[0], Modifier.weight(1f), viewModel, onUserClick)
                         } else { Spacer(Modifier.weight(1f)) }
 
                         if (initialUsers.size > 1) {
-                            UserCard(initialUsers[1], Modifier.weight(1f), viewModel)
+                            UserCard(initialUsers[1], Modifier.weight(1f), viewModel, onUserClick)
                         } else { Spacer(Modifier.weight(1f)) }
                     }
                     // Row 2
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         if (initialUsers.size > 2) {
-                            UserCard(initialUsers[2], Modifier.weight(1f), viewModel)
+                            UserCard(initialUsers[2], Modifier.weight(1f), viewModel, onUserClick)
                         } else { Spacer(Modifier.weight(1f)) }
 
                         if (initialUsers.size > 3) {
-                            UserCard(initialUsers[3], Modifier.weight(1f), viewModel)
+                            UserCard(initialUsers[3], Modifier.weight(1f), viewModel, onUserClick)
                         } else { Spacer(Modifier.weight(1f)) }
                     }
                 }
@@ -147,7 +149,7 @@ fun MyNetworkScreen(
                     items(suggestedUsers.chunked(2)) { rowUsers ->
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             rowUsers.forEach { user ->
-                                UserCard(user, Modifier.weight(1f), viewModel)
+                                UserCard(user, Modifier.weight(1f), viewModel, onUserClick)
                             }
                             if (rowUsers.size == 1) {
                                 Spacer(modifier = Modifier.weight(1f))
@@ -160,7 +162,7 @@ fun MyNetworkScreen(
     }
 }
 
-// Components
+// Components (NetworkOverviewSection remains unchanged)
 @Composable
 fun NetworkOverviewSection(invitesCount: Int, connectionsCount: Int, followingCount: Int) {
     Card(
@@ -195,7 +197,8 @@ fun NetworkStatItem(label: String, count: Int) {
 fun UserCard(
     networkUser: NetworkUser,
     modifier: Modifier = Modifier,
-    viewModel: MyNetworkViewModel
+    viewModel: MyNetworkViewModel,
+    onUserClick: (String) -> Unit
 ) {
     val user = networkUser.user
 
@@ -210,6 +213,7 @@ fun UserCard(
         modifier = modifier.height(260.dp)
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
+            // Remove Button
             IconButton(
                 onClick = { viewModel.removeSuggestion(user.userId) },
                 modifier = Modifier.align(Alignment.TopEnd).size(32.dp).padding(4.dp)
@@ -221,10 +225,17 @@ fun UserCard(
                 modifier = Modifier.padding(12.dp).fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 // Profile Image
-                Surface(shape = CircleShape, modifier = Modifier.size(70.dp), color = Color(0xFFE0E0E0)) {
+                Surface(
+                    shape = CircleShape,
+                    modifier = Modifier
+                        .size(70.dp)
+                        .clip(CircleShape)
+                        .clickable { onUserClick(user.userId) },
+                    color = Color(0xFFE0E0E0)
+                ) {
                     if (user.profileImageUrl.isNotEmpty()) {
                         AsyncImage(
                             model = user.profileImageUrl,
@@ -237,52 +248,104 @@ fun UserCard(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-                // Name
+                // 1. Name (Bigger)
                 Text(
                     text = user.username.ifEmpty { "Inno User" },
                     fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
+                    fontSize = 16.sp, // Increased from 14.sp
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center
                 )
 
-                // Headline
-                Text(
-                    text = user.headline.ifEmpty { "Student" },
-                    fontSize = 11.sp,
-                    color = Color.Gray,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                    lineHeight = 14.sp,
-                    modifier = Modifier.height(28.dp)
-                )
+                // 2. University (Bigger)
+                if (user.university.isNotEmpty()) {
+                    Text(
+                        text = user.university,
+                        fontSize = 13.sp, // Increased from 11.sp
+                        color = Color.Gray,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 15.sp
+                    )
+                }
+
+                // 3. Faculty (New Line & Bigger)
+                if (user.faculty.isNotEmpty()) {
+                    Text(
+                        text = user.faculty,
+                        fontSize = 12.sp, // Increased from 10.sp
+                        color = Color.Gray,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 14.sp
+                    )
+                }
+
+                // 4. Course (New Line & Bigger)
+                if (user.course.isNotEmpty()) {
+                    Text(
+                        text = user.course,
+                        fontSize = 12.sp, // Increased from 10.sp
+                        color = Color.Gray,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 14.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // 5. Top 3 Skills
+                if (user.skills.isNotEmpty()) {
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        user.skills.take(3).forEach { skill ->
+                            Surface(
+                                color = BrandBlue,
+                                shape = RoundedCornerShape(50),
+                                modifier = Modifier.padding(horizontal = 2.dp)
+                            ) {
+                                Text(
+                                    text = skill,
+                                    color = Color.White,
+                                    fontSize = 10.sp, // Slightly bigger
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                // --- UPDATED CONNECT BUTTON ---
+                // Connect Button
                 Button(
                     onClick = { viewModel.connectWithUser(user.userId) },
-                    // Disable button if Pending OR Connected
                     enabled = !isPending && !isConnected,
                     modifier = Modifier.fillMaxWidth().height(36.dp),
                     shape = RoundedCornerShape(50),
                     colors = ButtonDefaults.buttonColors(
-                        // Grey out if Pending or Connected
                         containerColor = if (isPending || isConnected) Color.Gray else BrandBlue
                     )
                 ) {
                     Text(
-                        // Change text based on status
                         text = when {
                             isConnected -> "Connected"
                             isPending -> "Pending"
                             else -> "Connect"
                         },
-                        fontSize = 12.sp,
+                        fontSize = 13.sp, // Increased from 12.sp
                         color = Color.White
                     )
                 }

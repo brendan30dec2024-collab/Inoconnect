@@ -13,7 +13,9 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine // --- ADDED THIS IMPORT
 import kotlinx.coroutines.flow.flowOf   // --- ADDED THIS IMPORT
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.flow.map
 import java.util.UUID
+
 
 class FirebaseRepository {
     private val auth = FirebaseAuth.getInstance()
@@ -360,14 +362,35 @@ class FirebaseRepository {
     suspend fun sendConnectionRequest(toUserId: String): Boolean {
         val uid = currentUserId ?: return false
 
-        // Check if request already exists
-        val existing = db.collection("connection_requests")
+        // 1. Check if request already exists
+        val querySnapshot = db.collection("connection_requests")
             .whereEqualTo("fromUserId", uid)
             .whereEqualTo("toUserId", toUserId)
             .get().await()
 
-        if (!existing.isEmpty) return false // Already sent
+        // 2. Handle existing requests (e.g. Reactivate a rejected one)
+        if (!querySnapshot.isEmpty) {
+            val existingDoc = querySnapshot.documents.first()
+            val status = existingDoc.getString("status")
 
+            if (status == "pending" || status == "accepted") {
+                return false // Already active
+            }
+
+            if (status == "rejected") {
+                // Reactivate the rejected request
+                existingDoc.reference.update(
+                    mapOf(
+                        "status" to "pending",
+                        "timestamp" to Timestamp.now()
+                    )
+                ).await()
+                // CRITICAL: Do NOT call followUser here.
+                return true
+            }
+        }
+
+        // 3. Create NEW request
         val newRef = db.collection("connection_requests").document()
         val request = ConnectionRequest(
             id = newRef.id,
@@ -377,8 +400,8 @@ class FirebaseRepository {
         )
         newRef.set(request).await()
 
-        // Auto-follow the person you connect with? (Optional, LinkedIn does this)
-        followUser(toUserId)
+        // CRITICAL: I removed followUser(toUserId) here.
+        // Now, clicking "Connect" sends the invite but DOES NOT change your stats.
         return true
     }
 
@@ -386,21 +409,38 @@ class FirebaseRepository {
     suspend fun acceptConnectionRequest(requestId: String, fromUserId: String) {
         val currentUid = currentUserId ?: return
 
-        db.runTransaction { transaction ->
-            // A. Update Request Status to 'accepted'
-            val requestRef = db.collection("connection_requests").document(requestId)
-            transaction.update(requestRef, "status", "accepted")
+        try {
+            db.runTransaction { transaction ->
+                // A. Update Request Status
+                val requestRef = db.collection("connection_requests").document(requestId)
+                transaction.update(requestRef, "status", "accepted")
 
-            // B. Add each other to 'connectionIds' list in Users collection
-            val myRef = db.collection("users").document(currentUid)
-            val otherRef = db.collection("users").document(fromUserId)
+                // B. Prepare User References
+                val myRef = db.collection("users").document(currentUid)
+                val senderRef = db.collection("users").document(fromUserId)
 
-            transaction.update(myRef, "connectionIds", FieldValue.arrayUnion(fromUserId))
-            transaction.update(myRef, "connectionsCount", FieldValue.increment(1))
+                // --- 1. UPDATE CONNECTIONS (Mutual) ---
+                transaction.update(myRef, "connectionIds", FieldValue.arrayUnion(fromUserId))
+                transaction.update(myRef, "connectionsCount", FieldValue.increment(1))
 
-            transaction.update(otherRef, "connectionIds", FieldValue.arrayUnion(currentUid))
-            transaction.update(otherRef, "connectionsCount", FieldValue.increment(1))
-        }.await()
+                transaction.update(senderRef, "connectionIds", FieldValue.arrayUnion(currentUid))
+                transaction.update(senderRef, "connectionsCount", FieldValue.increment(1))
+
+                // --- 2. UPDATE FOLLOWING (Mutual) ---
+                // NOW we add the following logic here, so it only happens on ACCEPT.
+
+                // "You follow them"
+                transaction.update(myRef, "followingIds", FieldValue.arrayUnion(fromUserId))
+                transaction.update(myRef, "followingCount", FieldValue.increment(1))
+
+                // "They follow you"
+                transaction.update(senderRef, "followingIds", FieldValue.arrayUnion(currentUid))
+                transaction.update(senderRef, "followingCount", FieldValue.increment(1))
+
+            }.await()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     // 3. Follow a User
@@ -413,63 +453,69 @@ class FirebaseRepository {
         myRef.update("followingCount", FieldValue.increment(1)).await()
     }
 
-    // 4. REAL-TIME: Get Suggested Users (Users I am NOT connected to)
-    // --- REAL-TIME SUGGESTIONS FIX ---
-    fun getSuggestedUsersFlow(): Flow<List<NetworkUser>> = callbackFlow {
-        val uid = currentUserId
-        if (uid == null) { trySend(emptyList()); close(); return@callbackFlow }
+    // 4. REAL-TIME: Get Suggested Users (Robust & Instant Updates)
+    fun getSuggestedUsersFlow(): Flow<List<NetworkUser>> {
+        val uid = currentUserId ?: return flowOf(emptyList())
 
-        // 1. Listen to ALL Users
-        val usersListener = db.collection("users")
-            .addSnapshotListener { allUsersSnap, error ->
-                if (error != null) return@addSnapshotListener
-                val allUsers = allUsersSnap?.toObjects(User::class.java) ?: emptyList()
-
-                // 2. Fetch MY User Data (To check who I am already connected with)
-                db.collection("users").document(uid).get().addOnSuccessListener { mySnap ->
-                    val myUser = mySnap.toObject(User::class.java)
-                    val myConnections = myUser?.connectionIds?.toSet() ?: emptySet()
-
-                    // 3. Fetch Pending Requests
-                    db.collection("connection_requests")
-                        .whereEqualTo("fromUserId", uid)
-                        .whereEqualTo("status", "pending")
-                        .get()
-                        .addOnSuccessListener { reqSnap ->
-                            val pendingSentIds = reqSnap.documents
-                                .mapNotNull { it.getString("toUserId") }
-                                .toSet()
-
-                            // 4. Filter & Map Results
-                            val suggestions = allUsers.mapNotNull { user ->
-                                // Always hide myself
-                                if (user.userId == uid) return@mapNotNull null
-
-                                val isConnected = myConnections.contains(user.userId)
-
-                                // --- CHANGED LOGIC HERE ---
-                                // If we have 20+ users, HIDE connected users.
-                                // If we have < 20 users, SHOW everyone (even connected ones).
-                                if (allUsers.size >= 20 && isConnected) {
-                                    return@mapNotNull null
-                                }
-
-                                // Determine Status
-                                val status = when {
-                                    isConnected -> "connected"
-                                    pendingSentIds.contains(user.userId) -> "pending_sent"
-                                    else -> "not_connected"
-                                }
-
-                                NetworkUser(user, status)
-                            }
-
-                            trySend(suggestions)
-                        }
+        // Flow A: Real-time Listener for ALL Users
+        val usersFlow = callbackFlow {
+            val listener = db.collection("users")
+                .addSnapshotListener { snapshot, _ ->
+                    val users = snapshot?.toObjects(User::class.java) ?: emptyList()
+                    trySend(users)
                 }
-            }
+            awaitClose { listener.remove() }
+        }
 
-        awaitClose { usersListener.remove() }
+        // Flow B: Real-time Listener for MY SENT REQUESTS (Pending only)
+        // We listen to this so if a request becomes "rejected", it leaves this list, and we know to update the UI.
+        val requestsFlow = callbackFlow {
+            val listener = db.collection("connection_requests")
+                .whereEqualTo("fromUserId", uid)
+                .whereEqualTo("status", "pending")
+                .addSnapshotListener { snapshot, _ ->
+                    // We only care about the IDs of people we sent requests to
+                    val ids = snapshot?.documents?.mapNotNull { it.getString("toUserId") }?.toSet()
+                        ?: emptySet()
+                    trySend(ids)
+                }
+            awaitClose { listener.remove() }
+        }
+
+        // Flow C: Real-time Listener for MY PROFILE (To know my connections)
+        val myProfileFlow = callbackFlow {
+            val listener = db.collection("users").document(uid)
+                .addSnapshotListener { snapshot, _ ->
+                    val user = snapshot?.toObject(User::class.java)
+                    val connectionIds = user?.connectionIds?.toSet() ?: emptySet()
+                    trySend(connectionIds)
+                }
+            awaitClose { listener.remove() }
+        }
+
+        // COMBINE: Merge all 3 real-time streams
+        return combine(usersFlow, requestsFlow, myProfileFlow) { allUsers, pendingSentIds, myConnectionIds ->
+            allUsers.mapNotNull { user ->
+                // Always hide myself
+                if (user.userId == uid) return@mapNotNull null
+
+                val isConnected = myConnectionIds.contains(user.userId)
+
+                // Optional: Hide connected users if list is large
+                if (allUsers.size >= 20 && isConnected) {
+                    return@mapNotNull null
+                }
+
+                // Determine Status strictly from real-time data
+                val status = when {
+                    isConnected -> "connected"
+                    pendingSentIds.contains(user.userId) -> "pending_sent" // If it's in the pending list
+                    else -> "not_connected" // If it was rejected, it's removed from pending list -> returns here
+                }
+
+                NetworkUser(user, status)
+            }
+        }
     }
 
     // 5. REAL-TIME: Get Network Stats (Invites, Connections, Following)
@@ -615,7 +661,15 @@ class FirebaseRepository {
     }
 
     suspend fun rejectConnectionRequest(requestId: String) {
-        db.collection("connection_requests").document(requestId).update("status", "rejected").await()
+        try {
+            // Just mark as rejected. No need to touch stats.
+            db.collection("connection_requests")
+                .document(requestId)
+                .update("status", "rejected")
+                .await()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     // --- FOR "INVITATIONS" TAB (Project Invites) ---
