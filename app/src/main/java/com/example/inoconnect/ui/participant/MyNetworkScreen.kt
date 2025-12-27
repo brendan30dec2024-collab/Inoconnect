@@ -198,7 +198,10 @@ fun UserCard(
     viewModel: MyNetworkViewModel
 ) {
     val user = networkUser.user
+
+    // Check both Pending and Connected statuses
     val isPending = networkUser.connectionStatus == "pending_sent"
+    val isConnected = networkUser.connectionStatus == "connected"
 
     Card(
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -246,7 +249,7 @@ fun UserCard(
                     textAlign = TextAlign.Center
                 )
 
-                // Headline / Role
+                // Headline
                 Text(
                     text = user.headline.ifEmpty { "Student" },
                     fontSize = 11.sp,
@@ -260,18 +263,25 @@ fun UserCard(
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                // Connect Button
+                // --- UPDATED CONNECT BUTTON ---
                 Button(
                     onClick = { viewModel.connectWithUser(user.userId) },
-                    enabled = !isPending,
+                    // Disable button if Pending OR Connected
+                    enabled = !isPending && !isConnected,
                     modifier = Modifier.fillMaxWidth().height(36.dp),
                     shape = RoundedCornerShape(50),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isPending) Color.Gray else BrandBlue
+                        // Grey out if Pending or Connected
+                        containerColor = if (isPending || isConnected) Color.Gray else BrandBlue
                     )
                 ) {
                     Text(
-                        text = if (isPending) "Pending" else "Connect",
+                        // Change text based on status
+                        text = when {
+                            isConnected -> "Connected"
+                            isPending -> "Pending"
+                            else -> "Connect"
+                        },
                         fontSize = 12.sp,
                         color = Color.White
                     )

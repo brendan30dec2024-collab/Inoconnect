@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -37,6 +38,7 @@ import java.util.Locale
 // Enum to track which popup is open
 enum class MessageTab { NONE, INVITATIONS, NOTIFICATIONS, FOLLOWERS }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MessagesScreen(navController: NavController) {
     val repository = remember { FirebaseRepository() }
@@ -47,14 +49,32 @@ fun MessagesScreen(navController: NavController) {
     var notifications by remember { mutableStateOf<List<AppNotification>>(emptyList()) }
     var connectionRequests by remember { mutableStateOf<List<ConnectionRequest>>(emptyList()) }
 
+    // Search States
+    var searchQuery by remember { mutableStateOf("") }
+    var searchResults by remember { mutableStateOf<List<User>>(emptyList()) }
+    var isSearching by remember { mutableStateOf(false) }
+
     // UI State for Dialog
     var activeTab by remember { mutableStateOf(MessageTab.NONE) }
 
-    // Load Data
+    // Load Data (Chats & Notifications)
     LaunchedEffect(Unit) {
         launch { repository.getChatChannelsFlow().collect { chatChannels = it } }
         launch { repository.getNotificationsFlow().collect { notifications = it } }
         launch { repository.getIncomingConnectionRequestsFlow().collect { connectionRequests = it } }
+    }
+
+    // Load Search Results
+    LaunchedEffect(searchQuery) {
+        if (searchQuery.isNotBlank()) {
+            isSearching = true
+            repository.searchUsers(searchQuery).collect {
+                searchResults = it
+            }
+        } else {
+            isSearching = false
+            searchResults = emptyList()
+        }
     }
 
     // Filtered Lists for Counts & Display
@@ -72,60 +92,124 @@ fun MessagesScreen(navController: NavController) {
                 .fillMaxSize()
                 .background(Color(0xFFF8F9FA))
         ) {
-            // --- TOP SECTION (3 CARDS) ---
-            Row(
+            // --- 1. SEARCH BAR ---
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                // 1. Invitations Card
-                HeaderCard(
-                    title = "Invitations",
-                    icon = Icons.Default.Email,
-                    count = inviteCount,
-                    color = Color(0xFFE3F2FD),
-                    iconColor = BrandBlue,
-                    onClick = { activeTab = MessageTab.INVITATIONS }
-                )
-                // 2. Notifications Card
-                HeaderCard(
-                    title = "Notifications",
-                    icon = Icons.Default.Notifications,
-                    count = notifCount,
-                    color = Color(0xFFFFF3E0),
-                    iconColor = Color(0xFFFF9800),
-                    onClick = { activeTab = MessageTab.NOTIFICATIONS }
-                )
-                // 3. Followers Card
-                HeaderCard(
-                    title = "Followers",
-                    icon = Icons.Default.Person,
-                    count = followCount,
-                    color = Color(0xFFE8F5E9),
-                    iconColor = Color(0xFF4CAF50),
-                    onClick = { activeTab = MessageTab.FOLLOWERS }
-                )
-            }
-
-            Divider(color = Color.LightGray.copy(alpha = 0.5f))
-
-            // --- CHAT LIST ---
-            Text(
-                text = "Messages",
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
-                modifier = Modifier.padding(16.dp),
-                color = Color.Black
+                placeholder = { Text("Find users to chat...", color = Color.Gray) },
+                leadingIcon = { Icon(Icons.Default.Search, null, tint = Color.Gray) },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(Icons.Default.Close, null, tint = Color.Gray)
+                        }
+                    }
+                },
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = BrandBlue,
+                    unfocusedBorderColor = Color.LightGray,
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White
+                ),
+                singleLine = true
             )
 
-            LazyColumn(
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(chatChannels) { channel ->
-                    ChatChannelItem(channel = channel, repository = repository) {
-                        navController.navigate("direct_chat/${channel.channelId}")
+            // --- 2. MAIN CONTENT (If NOT Searching) ---
+            if (!isSearching) {
+                // Top Cards
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    HeaderCard(
+                        title = "Invitations",
+                        icon = Icons.Default.Email,
+                        count = inviteCount,
+                        color = Color(0xFFE3F2FD),
+                        iconColor = BrandBlue,
+                        onClick = { activeTab = MessageTab.INVITATIONS }
+                    )
+                    HeaderCard(
+                        title = "Notifications",
+                        icon = Icons.Default.Notifications,
+                        count = notifCount,
+                        color = Color(0xFFFFF3E0),
+                        iconColor = Color(0xFFFF9800),
+                        onClick = { activeTab = MessageTab.NOTIFICATIONS }
+                    )
+                    HeaderCard(
+                        title = "Followers",
+                        icon = Icons.Default.Person,
+                        count = followCount,
+                        color = Color(0xFFE8F5E9),
+                        iconColor = Color(0xFF4CAF50),
+                        onClick = { activeTab = MessageTab.FOLLOWERS }
+                    )
+                }
+
+                Divider(color = Color.LightGray.copy(alpha = 0.5f), modifier = Modifier.padding(top = 8.dp))
+
+                // Chat List
+                Text(
+                    text = "Messages",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    modifier = Modifier.padding(16.dp),
+                    color = Color.Black
+                )
+
+                LazyColumn(
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (chatChannels.isEmpty()) {
+                        item {
+                            EmptyState("No recent chats")
+                        }
+                    } else {
+                        items(chatChannels) { channel ->
+                            ChatChannelItem(channel = channel, repository = repository) {
+                                navController.navigate("direct_chat/${channel.channelId}")
+                            }
+                        }
+                    }
+                }
+            }
+            // --- 3. SEARCH RESULTS (If Searching) ---
+            else {
+                Text(
+                    text = "Search Results",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    color = BrandBlue
+                )
+
+                LazyColumn(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (searchResults.isEmpty()) {
+                        item { EmptyState("No users found") }
+                    } else {
+                        items(searchResults) { user ->
+                            UserSearchItem(user = user) {
+                                // Navigate to DirectChatScreen
+                                val currentUid = repository.currentUserId ?: return@UserSearchItem
+                                val channelId = if (currentUid < user.userId)
+                                    "${currentUid}_${user.userId}"
+                                else
+                                    "${user.userId}_${currentUid}"
+
+                                navController.navigate("direct_chat/$channelId")
+                            }
+                        }
                     }
                 }
             }
@@ -146,6 +230,33 @@ fun MessagesScreen(navController: NavController) {
 }
 
 // --- SUB-COMPONENTS ---
+
+@Composable
+fun UserSearchItem(user: User, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .background(Color.White, RoundedCornerShape(12.dp))
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Surface(shape = CircleShape, modifier = Modifier.size(50.dp), color = Color.LightGray) {
+            if (user.profileImageUrl.isNotEmpty()) {
+                AsyncImage(model = user.profileImageUrl, contentDescription = null, contentScale = ContentScale.Crop)
+            } else {
+                Icon(Icons.Default.Person, null, modifier = Modifier.padding(10.dp), tint = Color.White)
+            }
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column {
+            Text(user.username, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text(user.headline.ifEmpty { "Student" }, fontSize = 12.sp, color = Color.Gray)
+        }
+        Spacer(modifier = Modifier.weight(1f))
+        Icon(Icons.Default.Email, null, tint = BrandBlue, modifier = Modifier.size(20.dp))
+    }
+}
 
 @Composable
 fun HeaderCard(
@@ -184,6 +295,8 @@ fun HeaderCard(
     }
 }
 
+// ... (CategoryDialog, NotificationItem, EmptyState, ChatChannelItem remain unchanged) ...
+// Ensure you keep the rest of your original file below here
 @Composable
 fun CategoryDialog(
     tab: MessageTab,
@@ -201,7 +314,6 @@ fun CategoryDialog(
         else -> ""
     }
 
-    // DialogProperties usePlatformDefaultWidth = false allows us to control the width freely
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -210,12 +322,11 @@ fun CategoryDialog(
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = Color.White),
             modifier = Modifier
-                .fillMaxWidth(0.95f) // 95% Width
-                .fillMaxHeight(0.75f) // 75% Height (Requested Change)
+                .fillMaxWidth(0.95f)
+                .fillMaxHeight(0.75f)
                 .padding(16.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                // Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -230,9 +341,7 @@ fun CategoryDialog(
                 Divider()
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Content List
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // 1. INVITATIONS LIST
                     if (tab == MessageTab.INVITATIONS) {
                         if (projectInvites.isEmpty()) item { EmptyState("No pending invitations") }
                         items(projectInvites) { invite ->
@@ -248,12 +357,11 @@ fun CategoryDialog(
                                         onDismiss()
                                     }
                                 },
-                                onCancel = { /* TODO: Decline logic */ }
+                                onCancel = { }
                             )
                         }
                     }
 
-                    // 2. NOTIFICATIONS LIST
                     if (tab == MessageTab.NOTIFICATIONS) {
                         if (notifications.isEmpty()) item { EmptyState("No new notifications") }
                         items(notifications) { notif ->
@@ -267,7 +375,6 @@ fun CategoryDialog(
                         }
                     }
 
-                    // 3. FOLLOWERS (CONNECTION REQUESTS) LIST
                     if (tab == MessageTab.FOLLOWERS) {
                         if (connectionRequests.isEmpty()) item { EmptyState("No pending requests") }
                         items(connectionRequests) { req ->
