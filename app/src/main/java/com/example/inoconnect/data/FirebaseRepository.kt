@@ -419,21 +419,18 @@ class FirebaseRepository {
         val uid = currentUserId
         if (uid == null) { trySend(emptyList()); close(); return@callbackFlow }
 
-        // 1. Listen to ALL Users (So we see name/photo/university changes INSTANTLY)
+        // 1. Listen to ALL Users
         val usersListener = db.collection("users")
-            // .limit(50) // Removed limit to ensure you see your test accounts
             .addSnapshotListener { allUsersSnap, error ->
                 if (error != null) return@addSnapshotListener
                 val allUsers = allUsersSnap?.toObjects(User::class.java) ?: emptyList()
 
                 // 2. Fetch MY User Data (To check who I am already connected with)
-                // We use a simple get() here to avoid complex nested listeners,
-                // assuming my connections don't change by magic in the background.
                 db.collection("users").document(uid).get().addOnSuccessListener { mySnap ->
                     val myUser = mySnap.toObject(User::class.java)
                     val myConnections = myUser?.connectionIds?.toSet() ?: emptySet()
 
-                    // 3. Fetch Pending Requests (To show 'Pending' button correctly)
+                    // 3. Fetch Pending Requests
                     db.collection("connection_requests")
                         .whereEqualTo("fromUserId", uid)
                         .whereEqualTo("status", "pending")
@@ -445,24 +442,33 @@ class FirebaseRepository {
 
                             // 4. Filter & Map Results
                             val suggestions = allUsers.mapNotNull { user ->
-                                // Don't suggest myself
+                                // Always hide myself
                                 if (user.userId == uid) return@mapNotNull null
-                                // Don't suggest people I'm already connected with
-                                if (myConnections.contains(user.userId)) return@mapNotNull null
 
-                                // Check if I already sent a request
-                                val status = if (pendingSentIds.contains(user.userId)) "pending_sent" else "not_connected"
+                                val isConnected = myConnections.contains(user.userId)
+
+                                // --- CHANGED LOGIC HERE ---
+                                // If we have 20+ users, HIDE connected users.
+                                // If we have < 20 users, SHOW everyone (even connected ones).
+                                if (allUsers.size >= 20 && isConnected) {
+                                    return@mapNotNull null
+                                }
+
+                                // Determine Status
+                                val status = when {
+                                    isConnected -> "connected"
+                                    pendingSentIds.contains(user.userId) -> "pending_sent"
+                                    else -> "not_connected"
+                                }
 
                                 NetworkUser(user, status)
                             }
 
-                            // Emit the fresh list to the UI
                             trySend(suggestions)
                         }
                 }
             }
 
-        // Clean up listener when screen is closed
         awaitClose { usersListener.remove() }
     }
 
@@ -526,11 +532,22 @@ class FirebaseRepository {
         val uid = currentUserId
         if (uid == null) { trySend(emptyList()); close(); return@callbackFlow }
 
+        // FIXED: Removed .orderBy server-side to prevent "Missing Index" failure.
+        // We now fetch all relevant channels and sort them in the app (Client-side sorting).
         val sub = db.collection("chat_channels")
             .whereArrayContains("participantIds", uid)
-            .orderBy("lastMessageTimestamp", Query.Direction.DESCENDING)
-            .addSnapshotListener { snap, _ ->
-                if (snap != null) trySend(snap.toObjects(ChatChannel::class.java))
+            .addSnapshotListener { snap, error ->
+                if (error != null) {
+                    // Ideally log this error: Log.e("Firestore", "Chat query failed", error)
+                    return@addSnapshotListener
+                }
+
+                if (snap != null) {
+                    val channels = snap.toObjects(ChatChannel::class.java)
+                    // Sort by timestamp descending (newest first) locally
+                    val sortedChannels = channels.sortedByDescending { it.lastMessageTimestamp }
+                    trySend(sortedChannels)
+                }
             }
         awaitClose { sub.remove() }
     }
@@ -661,6 +678,36 @@ class FirebaseRepository {
     suspend fun updateUserSkills(skills: List<String>) {
         val uid = currentUserId ?: return
         db.collection("users").document(uid).update("skills", skills).await()
+    }
+
+    // --- NEW: SEARCH USERS FOR CHAT ---
+    fun searchUsers(query: String): Flow<List<User>> = callbackFlow {
+        // 1. If query is empty, return empty list immediately
+        if (query.isBlank()) {
+            trySend(emptyList())
+            close()
+            return@callbackFlow
+        }
+
+        // 2. Firestore Prefix Search Query
+        // This finds usernames that start with 'query'
+        val subscription = db.collection("users")
+            .whereGreaterThanOrEqualTo("username", query)
+            .whereLessThan("username", query + "\uf8ff")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error) // Close flow on error
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val users = snapshot.toObjects(User::class.java)
+                    // Optional: Filter out myself locally
+                    val filtered = users.filter { it.userId != currentUserId }
+                    trySend(filtered)
+                }
+            }
+
+        awaitClose { subscription.remove() }
     }
 
 }

@@ -1,9 +1,12 @@
+// In app/src/main/java/com/example/inoconnect/ui/profile/ProfileComponents.kt
+
 package com.example.inoconnect.ui.profile
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
@@ -19,10 +22,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.inoconnect.ui.auth.BrandBlue
 
-// ... (ProfileStatsGrid and StatItem remain the same) ...
-
 @Composable
-fun ProfileStatsGrid(connections: Int, following: Int, projects: Int) {
+fun ProfileStatsGrid(
+    connections: Int,
+    following: Int,
+    projects: Int,
+    onConnectionsClick: () -> Unit, // --- ADDED
+    onFollowingClick: () -> Unit    // --- ADDED
+) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -32,28 +39,41 @@ fun ProfileStatsGrid(connections: Int, following: Int, projects: Int) {
             modifier = Modifier.padding(vertical = 16.dp).fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            StatItem("Connections", connections.toString())
+            // --- UPDATED: Pass onClick ---
+            StatItem("Connections", connections.toString(), onClick = onConnectionsClick)
+
             Box(modifier = Modifier.width(1.dp).height(40.dp).background(Color.LightGray))
-            StatItem("Following", following.toString())
+
+            // --- UPDATED: Pass onClick ---
+            StatItem("Following", following.toString(), onClick = onFollowingClick)
+
             Box(modifier = Modifier.width(1.dp).height(40.dp).background(Color.LightGray))
-            StatItem("Projects", projects.toString())
+
+            // Projects usually don't need a list, but you could add one if needed
+            StatItem("Projects", projects.toString(), onClick = {})
         }
     }
 }
 
 @Composable
-fun StatItem(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+fun StatItem(label: String, value: String, onClick: () -> Unit) { // --- UPDATED signature
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clickable { onClick() } // --- Make Clickable
+            .padding(8.dp)           // Add padding for touch target
+    ) {
         Text(value, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = BrandBlue)
         Text(label, fontSize = 12.sp, color = Color.Gray)
     }
 }
 
-// --- UPDATED: Accepted onEditClick to show pencil icon ---
+// ... (Keep ProfileSectionCard, InfoRow, ContactRow, etc. exactly as they were) ...
+// (Rest of the file content remains unchanged)
 @Composable
 fun ProfileSectionCard(
     title: String,
-    onEditClick: (() -> Unit)? = null, // <--- NEW PARAMETER
+    onEditClick: (() -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
     Card(
@@ -71,7 +91,6 @@ fun ProfileSectionCard(
             ) {
                 Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.Black)
 
-                // Show Edit Pencil if callback is provided
                 if (onEditClick != null) {
                     Icon(
                         imageVector = Icons.Default.Edit,
@@ -89,7 +108,6 @@ fun ProfileSectionCard(
     }
 }
 
-// ... (Rest of the file: InfoRow, ContactRow, EditTextField, SocialIconBtn remains the same) ...
 @Composable
 fun InfoRow(icon: ImageVector, label: String, value: String?) {
     if (value.isNullOrEmpty()) return

@@ -28,6 +28,8 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.inoconnect.data.FirebaseRepository
 import com.example.inoconnect.data.User
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import com.example.inoconnect.ui.auth.BrandBlue
 import com.example.inoconnect.ui.auth.LightGrayInput
 import kotlinx.coroutines.launch
@@ -49,9 +51,15 @@ fun ProfileScreen(
     var showEditSheet by remember { mutableStateOf(false) }
     var showSkillsSheet by remember { mutableStateOf(false) }
 
+    // --- NEW STATES FOR USER LISTS ---
+    var showUserListSheet by remember { mutableStateOf(false) }
+    var userListTitle by remember { mutableStateOf("") }
+    var displayedUsers by remember { mutableStateOf<List<User>>(emptyList()) }
+    var isListLoading by remember { mutableStateOf(false) }
+
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // --- Edit Fields (Main) ---
+    // ... (Keep existing Edit fields state: editName, editHeadline, etc.) ...
     var editName by remember { mutableStateOf("") }
     var editHeadline by remember { mutableStateOf("") }
     var editBio by remember { mutableStateOf("") }
@@ -60,11 +68,9 @@ fun ProfileScreen(
     var editCourse by remember { mutableStateOf("") }
     var editYear by remember { mutableStateOf("") }
 
-    // --- Edit Fields (Skills) ---
     var tempSkills by remember { mutableStateOf<List<String>>(emptyList()) }
     var newSkillInput by remember { mutableStateOf("") }
 
-    // --- Image Pickers ---
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
     val profileImageLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -81,7 +87,6 @@ fun ProfileScreen(
             if (uid != null) {
                 val fetchedUser = repository.getUserById(uid)
                 user = fetchedUser
-                // Pre-fill fields
                 fetchedUser?.let {
                     editName = it.username
                     editHeadline = it.headline
@@ -98,13 +103,26 @@ fun ProfileScreen(
 
     LaunchedEffect(Unit) { loadUserData() }
 
-    // --- SAVE LOGIC (Main) ---
+    // --- NEW: Helper to fetch and show users ---
+    fun openUserList(title: String, userIds: List<String>) {
+        userListTitle = title
+        showUserListSheet = true
+        isListLoading = true
+        scope.launch {
+            if (userIds.isNotEmpty()) {
+                displayedUsers = repository.getUsersByIds(userIds)
+            } else {
+                displayedUsers = emptyList()
+            }
+            isListLoading = false
+        }
+    }
+
+    // ... (Keep saveChanges and saveSkills logic) ...
     fun saveChanges() {
         scope.launch {
             try {
-                // We pass the existing skills so they aren't lost when editing other details
                 val currentSkills = user?.skills ?: emptyList()
-
                 repository.updateUserComplete(
                     username = editName,
                     headline = editHeadline,
@@ -117,8 +135,7 @@ fun ProfileScreen(
                     backgroundUri = selectedBackgroundUri,
                     skills = currentSkills,
                 )
-
-                loadUserData() // Refresh UI
+                loadUserData()
                 sheetState.hide()
                 showEditSheet = false
                 selectedImageUri = null
@@ -130,7 +147,6 @@ fun ProfileScreen(
         }
     }
 
-    // --- SAVE LOGIC (Skills) ---
     fun saveSkills() {
         scope.launch {
             try {
@@ -162,6 +178,7 @@ fun ProfileScreen(
             ) {
                 // ================= HEADER =================
                 Box(modifier = Modifier.fillMaxWidth()) {
+                    // ... (Keep existing Header logic for bgModel, etc.) ...
                     val bgModel: Any? = selectedBackgroundUri ?: user?.backgroundImageUrl?.takeIf { it.isNotEmpty() }
                     Box(modifier = Modifier.fillMaxWidth().height(160.dp).background(BrandBlue)) {
                         if (bgModel != null) {
@@ -198,15 +215,23 @@ fun ProfileScreen(
                 // ================= BODY =================
                 Column(modifier = Modifier.padding(horizontal = 24.dp)) {
                     Spacer(Modifier.height(16.dp))
+
+                    // --- UPDATED GRID ---
                     ProfileStatsGrid(
                         connections = user?.connectionsCount ?: 0,
                         following = user?.followingCount ?: 0,
-                        projects = user?.projectsCompleted ?: 0
+                        projects = user?.projectsCompleted ?: 0,
+                        onConnectionsClick = {
+                            openUserList("Connections", user?.connectionIds ?: emptyList())
+                        },
+                        onFollowingClick = {
+                            openUserList("Following", user?.followingIds ?: emptyList())
+                        }
                     )
 
                     Spacer(Modifier.height(16.dp))
 
-                    // EDIT BUTTON
+                    // ... (Rest of UI remains identical: Edit Button, Academic Biodata, Skills, Contact, Logout) ...
                     OutlinedButton(
                         onClick = { showEditSheet = true },
                         modifier = Modifier.fillMaxWidth(),
@@ -217,7 +242,6 @@ fun ProfileScreen(
 
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    // 1. Academic Biodata
                     ProfileSectionCard(title = "Academic Biodata") {
                         InfoRow(Icons.Default.Place, "University", user?.university)
                         InfoRow(Icons.Default.Home, "Faculty", user?.faculty)
@@ -228,7 +252,6 @@ fun ProfileScreen(
                         Text(user?.bio?.ifEmpty { "No bio." } ?: "", color = Color.Gray)
                     }
 
-                    // 2. Skills (EDITABLE)
                     ProfileSectionCard(
                         title = "Skills",
                         onEditClick = {
@@ -249,7 +272,6 @@ fun ProfileScreen(
                                             containerColor = Color(0xFFE3F2FD),
                                             labelColor = BrandBlue
                                         ),
-                                        // --- FIX: Use BorderStroke instead of ChipBorder ---
                                         border = BorderStroke(0.dp, Color.Transparent)
                                     )
                                 }
@@ -257,7 +279,6 @@ fun ProfileScreen(
                         }
                     }
 
-                    // 3. Contact Information
                     ProfileSectionCard(title = "Contact Information") {
                         ContactRow(Icons.Default.Email, user?.email ?: "")
                         if (!user?.phoneNumber.isNullOrEmpty()) ContactRow(Icons.Default.Phone, user!!.phoneNumber)
@@ -272,9 +293,10 @@ fun ProfileScreen(
             }
         }
 
-        // ================= MAIN EDIT SHEET =================
+        // ================= MAIN EDIT SHEET (Existing) =================
         if (showEditSheet) {
             ModalBottomSheet(onDismissRequest = { showEditSheet = false }, sheetState = sheetState) {
+                // ... (Existing Edit Sheet Content) ...
                 Column(modifier = Modifier.padding(horizontal = 24.dp).padding(bottom = 40.dp).verticalScroll(rememberScrollState())) {
                     Text("Edit Profile Details", fontSize = 20.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(16.dp))
@@ -307,9 +329,10 @@ fun ProfileScreen(
             }
         }
 
-        // ================= SKILLS EDIT SHEET =================
+        // ================= SKILLS EDIT SHEET (Existing) =================
         if (showSkillsSheet) {
             ModalBottomSheet(onDismissRequest = { showSkillsSheet = false }, sheetState = sheetState) {
+                // ... (Existing Skills Sheet Content) ...
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -373,7 +396,6 @@ fun ProfileScreen(
                                         containerColor = Color(0xFFF5F5F5),
                                         labelColor = Color.Black
                                     ),
-                                    // --- FIX: Use BorderStroke here too for consistency ---
                                     border = BorderStroke(1.dp, Color.LightGray)
                                 )
                             }
@@ -388,6 +410,79 @@ fun ProfileScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = BrandBlue)
                     ) {
                         Text("Save Skills")
+                    }
+                }
+            }
+        }
+
+        // ================= USER LIST SHEET (NEW) =================
+        if (showUserListSheet) {
+            ModalBottomSheet(
+                onDismissRequest = { showUserListSheet = false },
+                sheetState = sheetState
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = 50.dp)
+                        .heightIn(min = 200.dp, max = 500.dp)
+                ) {
+                    Text(
+                        text = userListTitle,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 16.dp).align(Alignment.CenterHorizontally)
+                    )
+
+                    if (isListLoading) {
+                        Box(Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = BrandBlue)
+                        }
+                    } else if (displayedUsers.isEmpty()) {
+                        Box(Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                            Text("No users found.", color = Color.Gray)
+                        }
+                    } else {
+                        LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            items(displayedUsers) { listUser ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        modifier = Modifier.size(50.dp),
+                                        color = Color.LightGray
+                                    ) {
+                                        if (listUser.profileImageUrl.isNotEmpty()) {
+                                            AsyncImage(
+                                                model = listUser.profileImageUrl,
+                                                contentDescription = null,
+                                                contentScale = ContentScale.Crop
+                                            )
+                                        } else {
+                                            Icon(
+                                                Icons.Default.Person,
+                                                null,
+                                                tint = Color.White,
+                                                modifier = Modifier.padding(10.dp)
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column {
+                                        Text(listUser.username, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            listUser.headline.ifEmpty { "Student" },
+                                            fontSize = 12.sp,
+                                            color = Color.Gray
+                                        )
+                                    }
+                                }
+                                Divider(color = Color.LightGray.copy(alpha = 0.3f), modifier = Modifier.padding(top = 8.dp))
+                            }
+                        }
                     }
                 }
             }

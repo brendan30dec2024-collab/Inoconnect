@@ -44,10 +44,6 @@ fun PublicProfileScreen(
     var isLoading by remember { mutableStateOf(true) }
 
     // --- NEW: CONNECTION STATUS FLOW (Fixes Sync & Pending Bugs) ---
-    // This flow automatically updates the UI when:
-    // 1. You successfully connect with the user ("connected")
-    // 2. You send a request ("pending")
-    // 3. You have no relationship ("none")
     val connectionStatus by repository.getConnectionStatusFlow(userId).collectAsState(initial = "loading")
 
     LaunchedEffect(userId) {
@@ -113,8 +109,7 @@ fun PublicProfileScreen(
                         // --- ACTION BUTTONS ROW ---
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
 
-                            // 1. Connect Button (Status-aware)
-                            // Only show if it's NOT my own profile
+                            // 1. Connect Button
                             if (currentUserId != null && currentUserId != userId) {
                                 Button(
                                     onClick = {
@@ -127,17 +122,17 @@ fun PublicProfileScreen(
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = when (connectionStatus) {
                                             "connected" -> Color.Gray
-                                            "pending" -> Color(0xFFFF9800) // Orange for pending
+                                            "pending" -> Color(0xFFFF9800)
                                             else -> BrandBlue
                                         }
                                     ),
                                     shape = RoundedCornerShape(24.dp),
                                     modifier = Modifier.height(36.dp),
-                                    enabled = connectionStatus != "loading" // Disable while loading
+                                    enabled = connectionStatus != "loading"
                                 ) {
                                     val icon = when (connectionStatus) {
                                         "connected" -> Icons.Default.Check
-                                        "pending" -> Icons.Default.Refresh // Or a clock icon
+                                        "pending" -> Icons.Default.Refresh
                                         else -> Icons.Default.Add
                                     }
                                     val text = when (connectionStatus) {
@@ -182,7 +177,15 @@ fun PublicProfileScreen(
                 // ================= BODY =================
                 Column(modifier = Modifier.padding(horizontal = 24.dp)) {
                     Spacer(Modifier.height(16.dp))
-                    ProfileStatsGrid(u.connectionsCount, u.followingCount, u.projectsCompleted)
+
+                    // --- FIXED: Added empty lambdas to satisfy the new signature ---
+                    ProfileStatsGrid(
+                        connections = u.connectionsCount,
+                        following = u.followingCount,
+                        projects = u.projectsCompleted,
+                        onConnectionsClick = {}, // Action disabled on public profile
+                        onFollowingClick = {}    // Action disabled on public profile
+                    )
 
                     Spacer(Modifier.height(16.dp))
 
