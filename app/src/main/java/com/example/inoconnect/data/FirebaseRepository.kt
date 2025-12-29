@@ -90,13 +90,21 @@ class FirebaseRepository {
         }
     }
 
-    // --- AUTH ---
+    // --- AUTH (Updated for Welcome Message) ---
     suspend fun registerUser(email: String, pass: String, role: String, username: String): Boolean {
         return try {
             val result = auth.createUserWithEmailAndPassword(email, pass).await()
             val uid = result.user?.uid ?: return false
             val newUser = User(userId = uid, email = email, role = role, username = username)
             db.collection("users").document(uid).set(newUser).await()
+
+            // 5. Send Welcome Notification
+            sendNotification(
+                toUserId = uid,
+                type = NotificationType.WELCOME_MESSAGE,
+                title = "Welcome to InnoConnect!",
+                message = "We are glad to have you here. Start by setting up your profile."
+            )
             true
         } catch (e: Exception) {
             e.printStackTrace()
@@ -122,26 +130,38 @@ class FirebaseRepository {
 
     // --- EVENT LOGIC (Restored for CreateEventScreen) ---
     suspend fun createEvent(
-        title: String,
-        description: String,
-        location: String,
-        eventDate: String,
-        joiningDeadline: String,
-        imageUrl: String
+        title: String, description: String, location: String,
+        eventDate: String, joiningDeadline: String, imageUrl: String
     ) {
         val uid = currentUserId ?: return
         val newDoc = db.collection("events").document()
         val event = Event(
-            eventId = newDoc.id,
-            organizerId = uid,
-            title = title,
-            description = description,
-            location = location,
-            eventDate = eventDate,
-            joiningDeadline = joiningDeadline,
-            imageUrl = imageUrl
+            eventId = newDoc.id, organizerId = uid, title = title,
+            description = description, location = location, eventDate = eventDate,
+            joiningDeadline = joiningDeadline, imageUrl = imageUrl
         )
         newDoc.set(event).await()
+
+        // 4. Notify ALL Users about New Event
+        try {
+            // Fetch ALL users to send the blast
+            val allUsersSnapshot = db.collection("users").get().await()
+            val organizerName = getUserById(uid)?.username ?: "An organizer"
+
+            for (doc in allUsersSnapshot.documents) {
+                // Don't send notification to the organizer themselves
+                if (doc.id == uid) continue
+
+                sendNotification(
+                    toUserId = doc.id,
+                    type = NotificationType.NEW_EVENT,
+                    title = "New Event: $title",
+                    message = "$organizerName has posted a new event.",
+                    relatedId = newDoc.id,
+                    senderId = uid
+                )
+            }
+        } catch (e: Exception) { e.printStackTrace() }
     }
 
     suspend fun getOrganizerEvents(): List<Event> {
@@ -162,6 +182,16 @@ class FirebaseRepository {
         } catch (e: Exception) {
             null
         }
+    }
+
+    // --- HELPER: Delete Notification ---
+    suspend fun deleteNotification(notificationId: String) {
+        val uid = currentUserId ?: return
+        try {
+            db.collection("users").document(uid)
+                .collection("notifications").document(notificationId)
+                .delete().await()
+        } catch (e: Exception) { e.printStackTrace() }
     }
 
     suspend fun deleteEvent(eventId: String) {
@@ -283,33 +313,82 @@ class FirebaseRepository {
     // --- JOIN REQUEST LOGIC ---
     suspend fun requestToJoinProject(projectId: String): Boolean {
         val uid = currentUserId ?: return false
+        val myUser = getUserById(uid)
+        val myName = myUser?.username ?: "A user"
+
         return try {
-            db.runTransaction { transaction ->
+            // A. Transaction to add to pending list
+            val projectCreatorId = db.runTransaction { transaction ->
                 val ref = db.collection("projects").document(projectId)
                 val snapshot = transaction.get(ref)
-                val project = snapshot.toObject(Project::class.java) ?: return@runTransaction false
+                val project = snapshot.toObject(Project::class.java) ?: throw Exception("Project not found")
 
                 if (project.memberIds.size >= project.targetTeamSize) throw Exception("Full")
-                if (project.pendingApplicantIds.contains(uid) || project.memberIds.contains(uid)) return@runTransaction true
+                if (project.pendingApplicantIds.contains(uid) || project.memberIds.contains(uid)) return@runTransaction null // Already applied
 
                 transaction.update(ref, "pendingApplicantIds", FieldValue.arrayUnion(uid))
-                true
+                project.creatorId // Return creator ID for notification
             }.await()
+
+            // B. Send Notification to Owner (Scenario 1)
+            if (projectCreatorId != null) {
+                val project = getProjectById(projectId)
+                val projectTitle = project?.title ?: "your project"
+
+                sendNotification(
+                    toUserId = projectCreatorId,
+                    type = NotificationType.PROJECT_JOIN_REQUEST,
+                    title = "Join Request",
+                    message = "$myName wants to join '$projectTitle'",
+                    relatedId = projectId,
+                    senderId = uid
+                )
+                true
+            } else {
+                false // Already applied
+            }
         } catch (e: Exception) { false }
     }
 
     suspend fun acceptJoinRequest(projectId: String, applicantId: String) {
         val ref = db.collection("projects").document(projectId)
+
+        // A. Update Project
         db.runTransaction { transaction ->
             transaction.update(ref, "pendingApplicantIds", FieldValue.arrayRemove(applicantId))
             transaction.update(ref, "memberIds", FieldValue.arrayUnion(applicantId))
         }.await()
+
+        // B. Notify Applicant (Scenario 3)
+        val project = getProjectById(projectId)
+        val projectTitle = project?.title ?: "a project"
+
+        sendNotification(
+            toUserId = applicantId,
+            type = NotificationType.PROJECT_ACCEPTED,
+            title = "Request Accepted",
+            message = "You have been accepted into '$projectTitle'",
+            relatedId = projectId
+        )
     }
 
     suspend fun rejectJoinRequest(projectId: String, applicantId: String) {
+        // A. Update Project
         db.collection("projects").document(projectId)
             .update("pendingApplicantIds", FieldValue.arrayRemove(applicantId))
             .await()
+
+        // B. Notify Applicant
+        val project = getProjectById(projectId)
+        val projectTitle = project?.title ?: "a project"
+
+        sendNotification(
+            toUserId = applicantId,
+            type = NotificationType.PROJECT_DECLINE,
+            title = "Application Declined",
+            message = "Your request to join '$projectTitle' was declined.",
+            relatedId = projectId
+        )
     }
 
     // --- ADMIN LOGIC ---
@@ -323,9 +402,22 @@ class FirebaseRepository {
     }
 
     suspend fun removeMember(projectId: String, memberId: String) {
+        // A. Remove from DB
         db.collection("projects").document(projectId)
             .update("memberIds", FieldValue.arrayRemove(memberId))
             .await()
+
+        // B. Notify Member (Scenario 2)
+        val project = getProjectById(projectId)
+        val projectTitle = project?.title ?: "a project"
+
+        sendNotification(
+            toUserId = memberId,
+            type = NotificationType.PROJECT_REMOVAL,
+            title = "Removed from Project",
+            message = "You have been removed from '$projectTitle'",
+            relatedId = projectId
+        )
     }
 
     suspend fun updateProjectStatus(projectId: String, status: String) {
@@ -409,6 +501,12 @@ class FirebaseRepository {
     suspend fun acceptConnectionRequest(requestId: String, fromUserId: String) {
         val currentUid = currentUserId ?: return
 
+        // 1. Fetch User Details (To get names for the notification)
+        val myUser = getUserById(currentUid)
+        val otherUser = getUserById(fromUserId)
+        val myName = myUser?.username ?: "User"
+        val otherName = otherUser?.username ?: "User"
+
         try {
             db.runTransaction { transaction ->
                 // A. Update Request Status
@@ -419,25 +517,38 @@ class FirebaseRepository {
                 val myRef = db.collection("users").document(currentUid)
                 val senderRef = db.collection("users").document(fromUserId)
 
-                // --- 1. UPDATE CONNECTIONS (Mutual) ---
+                // C. Update Connections & Following (Mutual)
                 transaction.update(myRef, "connectionIds", FieldValue.arrayUnion(fromUserId))
                 transaction.update(myRef, "connectionsCount", FieldValue.increment(1))
-
-                transaction.update(senderRef, "connectionIds", FieldValue.arrayUnion(currentUid))
-                transaction.update(senderRef, "connectionsCount", FieldValue.increment(1))
-
-                // --- 2. UPDATE FOLLOWING (Mutual) ---
-                // NOW we add the following logic here, so it only happens on ACCEPT.
-
-                // "You follow them"
                 transaction.update(myRef, "followingIds", FieldValue.arrayUnion(fromUserId))
                 transaction.update(myRef, "followingCount", FieldValue.increment(1))
 
-                // "They follow you"
+                transaction.update(senderRef, "connectionIds", FieldValue.arrayUnion(currentUid))
+                transaction.update(senderRef, "connectionsCount", FieldValue.increment(1))
                 transaction.update(senderRef, "followingIds", FieldValue.arrayUnion(currentUid))
                 transaction.update(senderRef, "followingCount", FieldValue.increment(1))
-
             }.await()
+
+            // D. SEND NOTIFICATIONS (Create the database entries)
+
+            // Notify the Other Person
+            sendNotification(
+                toUserId = fromUserId,
+                type = NotificationType.CONNECTION_ACCEPTED,
+                title = "Connection Accepted",
+                message = "You are now connected with $myName",
+                relatedId = currentUid
+            )
+
+            // Notify Myself
+            sendNotification(
+                toUserId = currentUid,
+                type = NotificationType.CONNECTION_ACCEPTED,
+                title = "Connection Successful",
+                message = "You are now connected with $otherName",
+                relatedId = fromUserId
+            )
+
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -552,13 +663,23 @@ class FirebaseRepository {
             .orderBy("timestamp", Query.Direction.DESCENDING)
             .addSnapshotListener { snap, _ ->
                 if (snap != null) {
-                    trySend(snap.toObjects(AppNotification::class.java))
+                    val notifications = snap.documents.mapNotNull { doc ->
+                        doc.toObject(AppNotification::class.java)?.copy(id = doc.id)
+                    }
+                    trySend(notifications)
                 }
             }
         awaitClose { sub.remove() }
     }
 
-    suspend fun sendNotification(toUserId: String, type: NotificationType, title: String, message: String, relatedId: String = "") {
+    suspend fun sendNotification(
+        toUserId: String,
+        type: NotificationType,
+        title: String,
+        message: String,
+        relatedId: String = "",
+        senderId: String = "" // Added senderId
+    ) {
         val ref = db.collection("users").document(toUserId).collection("notifications").document()
         val notif = AppNotification(
             id = ref.id,
@@ -566,11 +687,11 @@ class FirebaseRepository {
             type = type,
             title = title,
             message = message,
-            relatedId = relatedId
+            relatedId = relatedId,
+            senderId = senderId
         )
         ref.set(notif).await()
     }
-
     // --- 2. DIRECT MESSAGES ---
 
     // Get list of active conversations
@@ -612,29 +733,36 @@ class FirebaseRepository {
     suspend fun sendDirectMessage(toUserId: String, content: String) {
         val uid = currentUserId ?: return
 
-        // Generate a consistent Channel ID (Sort UIDs alphabetically so UserA_UserB is same as UserB_UserA)
-        val channelId = if (uid < toUserId) "${uid}_$toUserId" else "${toUserId}_$uid"
+        // 1. Get My Username for the notification
+        val myUser = getUserById(uid)
+        val myName = myUser?.username ?: "Someone"
 
+        val channelId = if (uid < toUserId) "${uid}_$toUserId" else "${toUserId}_$uid"
         val channelRef = db.collection("chat_channels").document(channelId)
 
-        // 1. Ensure Channel Exists or Update Last Message
+        // 2. Update Channel
         val channelUpdate = mapOf(
             "channelId" to channelId,
-            "participantIds" to listOf(uid, toUserId), // Ensure both are in
+            "participantIds" to listOf(uid, toUserId),
             "lastMessage" to content,
             "lastMessageTimestamp" to Timestamp.now(),
             "lastSenderId" to uid
         )
         channelRef.set(channelUpdate, com.google.firebase.firestore.SetOptions.merge()).await()
 
-        // 2. Add Message
+        // 3. Add Message
         val msgRef = channelRef.collection("messages").document()
-        val msg = DirectMessage(
-            id = msgRef.id,
-            senderId = uid,
-            content = content
-        )
+        val msg = DirectMessage(id = msgRef.id, senderId = uid, content = content)
         msgRef.set(msg).await()
+
+        // 4. Send Notification to the Receiver
+        sendNotification(
+            toUserId = toUserId,
+            type = NotificationType.NEW_DM,
+            title = "New Message",
+            message = "$myName sent you a message.",
+            relatedId = channelId
+        )
     }
 
     // Helper to get the "Other User" details from a chat channel
@@ -676,17 +804,12 @@ class FirebaseRepository {
     // Simulating accepting a project invite notification
     suspend fun acceptProjectInvite(notificationId: String, projectId: String) {
         val uid = currentUserId ?: return
-
-        // 1. Add user to project
         db.collection("projects").document(projectId)
             .update("memberIds", FieldValue.arrayUnion(uid))
             .await()
 
-        // 2. Mark notification as read/handled
-        db.collection("users").document(uid)
-            .collection("notifications").document(notificationId)
-            .delete() // Or update to isRead = true
-            .await()
+        // Delete notification
+        deleteNotification(notificationId)
     }
 
     // --- FULL PROFILE UPDATE ---
@@ -763,5 +886,22 @@ class FirebaseRepository {
 
         awaitClose { subscription.remove() }
     }
+
+    // --- NEW: Mark Notifications as Read ---
+    suspend fun markNotificationsAsRead(notificationIds: List<String>) {
+        val uid = currentUserId ?: return
+        if (notificationIds.isEmpty()) return
+
+        try {
+            val batch = db.batch()
+            notificationIds.forEach { id ->
+                val ref = db.collection("users").document(uid)
+                    .collection("notifications").document(id)
+                batch.update(ref, "isRead", true)
+            }
+            batch.commit().await()
+        } catch (e: Exception) { e.printStackTrace() }
+    }
+
 
 }

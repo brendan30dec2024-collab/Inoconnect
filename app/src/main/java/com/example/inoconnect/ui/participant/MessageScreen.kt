@@ -77,13 +77,30 @@ fun MessagesScreen(navController: NavController) {
         }
     }
 
-    // Filtered Lists for Counts & Display
-    val projectInvites = notifications.filter { it.type == NotificationType.PROJECT_INVITE }
-    val generalNotifs = notifications.filter { it.type == NotificationType.SYSTEM_ALERT || it.type == NotificationType.PROJECT_DECLINE || it.type == NotificationType.NEW_DM }
+    // --- FILTERS ---
+
+    // 1. Invitations: Includes "Project Invites" (to me) AND "Join Requests" (from others)
+    val projectInvites = notifications.filter {
+        it.type == NotificationType.PROJECT_INVITE ||
+                it.type == NotificationType.PROJECT_JOIN_REQUEST
+    }
+
+    // 2. General Notifications: Includes all alerts/info
+    val generalNotifs = notifications.filter {
+        it.type == NotificationType.SYSTEM_ALERT ||
+                it.type == NotificationType.PROJECT_DECLINE ||
+                it.type == NotificationType.NEW_DM ||
+                it.type == NotificationType.CONNECTION_ACCEPTED ||
+                it.type == NotificationType.PROJECT_ACCEPTED ||
+                it.type == NotificationType.PROJECT_REMOVAL ||
+                it.type == NotificationType.NEW_EVENT ||
+                it.type == NotificationType.WELCOME_MESSAGE
+    }
 
     // Counts
     val inviteCount = projectInvites.size
-    val notifCount = generalNotifs.size
+    // FIXED: Only count unread notifications for the red dot
+    val notifCount = generalNotifs.count { !it.isRead }
     val followCount = connectionRequests.size
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -232,72 +249,6 @@ fun MessagesScreen(navController: NavController) {
 // --- SUB-COMPONENTS ---
 
 @Composable
-fun UserSearchItem(user: User, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-            .background(Color.White, RoundedCornerShape(12.dp))
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Surface(shape = CircleShape, modifier = Modifier.size(50.dp), color = Color.LightGray) {
-            if (user.profileImageUrl.isNotEmpty()) {
-                AsyncImage(model = user.profileImageUrl, contentDescription = null, contentScale = ContentScale.Crop)
-            } else {
-                Icon(Icons.Default.Person, null, modifier = Modifier.padding(10.dp), tint = Color.White)
-            }
-        }
-        Spacer(modifier = Modifier.width(12.dp))
-        Column {
-            Text(user.username, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            Text(user.headline.ifEmpty { "Student" }, fontSize = 12.sp, color = Color.Gray)
-        }
-        Spacer(modifier = Modifier.weight(1f))
-        Icon(Icons.Default.Email, null, tint = BrandBlue, modifier = Modifier.size(20.dp))
-    }
-}
-
-@Composable
-fun HeaderCard(
-    title: String,
-    icon: ImageVector,
-    count: Int,
-    color: Color,
-    iconColor: Color,
-    onClick: () -> Unit
-) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = color),
-        shape = RoundedCornerShape(16.dp),
-        modifier = Modifier
-            .width(110.dp)
-            .height(100.dp)
-            .clickable { onClick() }
-    ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Box {
-                Icon(icon, null, tint = iconColor, modifier = Modifier.size(32.dp))
-                if (count > 0) {
-                    Badge(
-                        containerColor = Color.Red,
-                        modifier = Modifier.align(Alignment.TopEnd).offset(x = 8.dp, y = (-8).dp)
-                    ) { Text("$count", color = Color.White) }
-                }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(title, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color.Black)
-        }
-    }
-}
-
-// ... (CategoryDialog, NotificationItem, EmptyState, ChatChannelItem remain unchanged) ...
-// Ensure you keep the rest of your original file below here
-@Composable
 fun CategoryDialog(
     tab: MessageTab,
     onDismiss: () -> Unit,
@@ -307,6 +258,20 @@ fun CategoryDialog(
     repository: FirebaseRepository
 ) {
     val scope = rememberCoroutineScope()
+
+    // --- AUTOMATIC MARK AS READ ---
+    // This runs as soon as the dialog opens for the Notifications tab
+    if (tab == MessageTab.NOTIFICATIONS) {
+        val unreadIds = remember(notifications) {
+            notifications.filter { !it.isRead }.map { it.id }
+        }
+        LaunchedEffect(unreadIds) {
+            if (unreadIds.isNotEmpty()) {
+                repository.markNotificationsAsRead(unreadIds)
+            }
+        }
+    }
+
     val title = when(tab) {
         MessageTab.INVITATIONS -> "Project Invitations"
         MessageTab.NOTIFICATIONS -> "Notifications"
@@ -342,26 +307,52 @@ fun CategoryDialog(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+
+                    // --- 1. INVITATIONS TAB ---
                     if (tab == MessageTab.INVITATIONS) {
                         if (projectInvites.isEmpty()) item { EmptyState("No pending invitations") }
+
                         items(projectInvites) { invite ->
+                            val isJoinRequest = invite.type == NotificationType.PROJECT_JOIN_REQUEST
+
                             NotificationItem(
                                 title = invite.title,
                                 body = invite.message,
                                 time = invite.timestamp,
-                                icon = Icons.Default.Email,
+                                icon = if (isJoinRequest) Icons.Default.Person else Icons.Default.Email,
                                 showActions = true,
                                 onConfirm = {
                                     scope.launch {
-                                        repository.acceptProjectInvite(invite.id, invite.relatedId)
+                                        if (isJoinRequest) {
+                                            // Action: I am Owner, accepting a User
+                                            repository.acceptJoinRequest(projectId = invite.relatedId, applicantId = invite.senderId)
+                                            // Clean up the notification
+                                            repository.deleteNotification(invite.id)
+                                        } else {
+                                            // Action: I am User, accepting an Invite
+                                            repository.acceptProjectInvite(invite.id, invite.relatedId)
+                                        }
                                         onDismiss()
                                     }
                                 },
-                                onCancel = { }
+                                onCancel = {
+                                    scope.launch {
+                                        if (isJoinRequest) {
+                                            // Action: Reject applicant
+                                            repository.rejectJoinRequest(projectId = invite.relatedId, applicantId = invite.senderId)
+                                            // Clean up the notification
+                                            repository.deleteNotification(invite.id)
+                                        }
+                                        // If it's just an invite to me, maybe just dismiss the dialog or delete notif?
+                                        // For now, let's just dismiss.
+                                        onDismiss()
+                                    }
+                                }
                             )
                         }
                     }
 
+                    // --- 2. NOTIFICATIONS TAB ---
                     if (tab == MessageTab.NOTIFICATIONS) {
                         if (notifications.isEmpty()) item { EmptyState("No new notifications") }
                         items(notifications) { notif ->
@@ -375,6 +366,7 @@ fun CategoryDialog(
                         }
                     }
 
+                    // --- 3. FOLLOWERS TAB ---
                     if (tab == MessageTab.FOLLOWERS) {
                         if (connectionRequests.isEmpty()) item { EmptyState("No pending requests") }
                         items(connectionRequests) { req ->
@@ -467,6 +459,70 @@ fun EmptyState(msg: String) {
         contentAlignment = Alignment.Center
     ) {
         Text(msg, color = Color.Gray, fontSize = 14.sp)
+    }
+}
+
+@Composable
+fun UserSearchItem(user: User, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .background(Color.White, RoundedCornerShape(12.dp))
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Surface(shape = CircleShape, modifier = Modifier.size(50.dp), color = Color.LightGray) {
+            if (user.profileImageUrl.isNotEmpty()) {
+                AsyncImage(model = user.profileImageUrl, contentDescription = null, contentScale = ContentScale.Crop)
+            } else {
+                Icon(Icons.Default.Person, null, modifier = Modifier.padding(10.dp), tint = Color.White)
+            }
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column {
+            Text(user.username, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text(user.headline.ifEmpty { "Student" }, fontSize = 12.sp, color = Color.Gray)
+        }
+        Spacer(modifier = Modifier.weight(1f))
+        Icon(Icons.Default.Email, null, tint = BrandBlue, modifier = Modifier.size(20.dp))
+    }
+}
+
+@Composable
+fun HeaderCard(
+    title: String,
+    icon: ImageVector,
+    count: Int,
+    color: Color,
+    iconColor: Color,
+    onClick: () -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = color),
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier
+            .width(110.dp)
+            .height(100.dp)
+            .clickable { onClick() }
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box {
+                Icon(icon, null, tint = iconColor, modifier = Modifier.size(32.dp))
+                if (count > 0) {
+                    Badge(
+                        containerColor = Color.Red,
+                        modifier = Modifier.align(Alignment.TopEnd).offset(x = 8.dp, y = (-8).dp)
+                    ) { Text("$count", color = Color.White) }
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(title, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color.Black)
+        }
     }
 }
 
