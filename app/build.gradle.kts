@@ -74,4 +74,7 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+
+    implementation("com.facebook.android:facebook-login:17.0.0")
+    implementation("com.google.android.gms:play-services-auth:21.4.0")
 }

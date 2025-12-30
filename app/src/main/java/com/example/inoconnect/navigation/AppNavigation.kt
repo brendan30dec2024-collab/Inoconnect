@@ -9,6 +9,7 @@ import androidx.navigation.navArgument // --- Added
 import androidx.navigation.NavType   // --- Added
 import com.example.inoconnect.data.FirebaseRepository // --- Added
 import com.example.inoconnect.data.UserRole
+import com.example.inoconnect.ui.auth.ForgotPasswordScreen
 import com.example.inoconnect.ui.auth.LoginScreen
 import com.example.inoconnect.ui.auth.RegisterScreen
 import com.example.inoconnect.ui.organizer.CreateEventScreen
@@ -35,6 +36,7 @@ fun AppNavigation() {
                     if (role == UserRole.ORGANIZER) navController.navigate("organizer_dash")
                     else navController.navigate("participant_main") // Defaults to home
                 },
+                onForgotPasswordClick = { navController.navigate("forgot_password") } ,
                 onRegisterClick = { navController.navigate("register") }
             )
         }
@@ -156,6 +158,12 @@ fun AppNavigation() {
                         navController.navigate("public_profile/$userId")
                     }
                 }
+            )
+        }
+
+        composable("forgot_password") {
+            ForgotPasswordScreen(
+                onNavigateBack = { navController.popBackStack() }
             )
         }
 

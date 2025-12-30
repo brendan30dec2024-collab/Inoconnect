@@ -13,8 +13,13 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine // --- ADDED THIS IMPORT
 import kotlinx.coroutines.flow.flowOf   // --- ADDED THIS IMPORT
 import kotlinx.coroutines.tasks.await
-import kotlinx.coroutines.flow.map
+import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.auth.AuthCredential
 import java.util.UUID
+import com.google.firebase.auth.FacebookAuthProvider
+import com.facebook.AccessToken
+import android.util.Log
+
 
 
 class FirebaseRepository {
@@ -901,6 +906,115 @@ class FirebaseRepository {
             }
             batch.commit().await()
         } catch (e: Exception) { e.printStackTrace() }
+    }
+
+    // --- GOOGLE SIGN IN ---
+    suspend fun signInWithGoogle(idToken: String): String? {
+        return try {
+            val credential = GoogleAuthProvider.getCredential(idToken, null)
+            val result = auth.signInWithCredential(credential).await()
+            val user = result.user ?: return null
+
+            val docRef = db.collection("users").document(user.uid)
+            val snapshot = docRef.get().await()
+
+            if (snapshot.exists()) {
+                // Return existing role
+                snapshot.getString("role")
+            } else {
+                // First time login? Create default user document
+                // You might want to default to "participant" or handle role selection later
+                val newUser = User(
+                    userId = user.uid,
+                    email = user.email ?: "",
+                    role = "participant", // Default role
+                    username = user.displayName ?: "User"
+                )
+                docRef.set(newUser).await()
+
+                // Send welcome notification
+                sendNotification(
+                    toUserId = user.uid,
+                    type = NotificationType.WELCOME_MESSAGE,
+                    title = "Welcome to InnoConnect!",
+                    message = "Your Google account is now connected."
+                )
+                "participant"
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    // --- GITHUB SIGN IN ---
+    // This is called AFTER the UI successfully completes the OAuth flow
+    suspend fun onSignInWithGithubSuccess(): String? {
+        val user = auth.currentUser ?: return null
+        return try {
+            val docRef = db.collection("users").document(user.uid)
+            val snapshot = docRef.get().await()
+
+            if (snapshot.exists()) {
+                snapshot.getString("role")
+            } else {
+                // First time login via GitHub -> Create Profile
+                val newUser = User(
+                    userId = user.uid,
+                    email = user.email ?: "",
+                    role = "participant", // Default role
+                    username = user.displayName ?: "GitHub User"
+                )
+                docRef.set(newUser).await()
+
+                sendNotification(
+                    toUserId = user.uid,
+                    type = NotificationType.WELCOME_MESSAGE,
+                    title = "Welcome to InnoConnect!",
+                    message = "Your GitHub account is now connected."
+                )
+                "participant"
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    suspend fun signInWithFacebook(token: AccessToken): String? {
+        return try {
+            val credential = FacebookAuthProvider.getCredential(token.token)
+            val result = auth.signInWithCredential(credential).await()
+            val uid = result.user?.uid ?: return null
+
+            // Check if user exists in Firestore; if not, create them
+            val doc = db.collection("users").document(uid).get().await()
+            if (!doc.exists()) {
+                val newUser = User(
+                    userId = uid,
+                    email = result.user?.email ?: "",
+                    role = "Participant", // Default role
+                    username = result.user?.displayName ?: "New User"
+                )
+                db.collection("users").document(uid).set(newUser).await()
+                return "Participant"
+            }
+            doc.getString("role")
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    suspend fun sendPasswordReset(email: String): Boolean {
+        return try {
+            auth.sendPasswordResetEmail(email).await()
+            Log.d("FirebaseRepo", "Reset email sent to $email")
+            true
+        } catch (e: Exception) {
+            Log.e("FirebaseRepo", "Error sending reset email", e)
+            false
+        }
     }
 
 

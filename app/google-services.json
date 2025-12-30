@@ -12,7 +12,12 @@
           "package_name": "com.example.inoconnect"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "238599028360-vj57vv9adp6lrijihe10ve362rcpss02.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyBQ4-GlVdOlFrmGEuNq13_Nx3gEPZTAVYQ"

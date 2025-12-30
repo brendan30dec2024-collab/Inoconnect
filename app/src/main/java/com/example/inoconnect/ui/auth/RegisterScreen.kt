@@ -1,7 +1,12 @@
 package com.example.inoconnect.ui.auth
 
+import android.app.Activity
+import android.util.Patterns
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -23,15 +28,24 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.inoconnect.R
 import com.example.inoconnect.data.FirebaseRepository
 import com.example.inoconnect.data.UserRole
+import com.facebook.CallbackManager
+import com.facebook.FacebookCallback
+import com.facebook.FacebookException
+import com.facebook.login.LoginManager
+import com.facebook.login.LoginResult
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.OAuthProvider
 import kotlinx.coroutines.launch
-
-// NOTE: Helpers (StyledTextField, SocialIcon, RoleOption, BrandBlue) are in AuthComponents.kt
 
 @Composable
 fun RegisterScreen(
@@ -41,35 +55,131 @@ fun RegisterScreen(
     val repository = remember { FirebaseRepository() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val auth = FirebaseAuth.getInstance()
 
     var username by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
-    var selectedRole by remember { mutableStateOf(UserRole.PARTICIPANT) }
+
+    // CHANGE: Hardcoded role. User cannot select this anymore.
+    // Ideally, "Organizer" accounts are now created manually in Firebase Console.
+    val defaultRole = UserRole.PARTICIPANT
+
     var isLoading by remember { mutableStateOf(false) }
+
+    // ================= SOCIAL LOGIN SETUP =================
+
+    // --- 1. Google Sign-In ---
+    val googleSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+            try {
+                val account = task.getResult(ApiException::class.java)
+                val idToken = account.idToken
+                if (idToken != null) {
+                    scope.launch {
+                        isLoading = true
+                        val role = repository.signInWithGoogle(idToken)
+                        isLoading = false
+                        if (role != null) {
+                            onRegisterSuccess(role)
+                        } else {
+                            Toast.makeText(context, "Google Sign-Up Failed", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            } catch (e: ApiException) {
+                Toast.makeText(context, "Google Error: ${e.statusCode}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val launchGoogle = {
+        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(context.getString(R.string.default_web_client_id))
+            .requestEmail()
+            .build()
+        val client = GoogleSignIn.getClient(context, gso)
+        googleSignInLauncher.launch(client.signInIntent)
+    }
+
+    // --- 2. Facebook Sign-In ---
+    val loginManager = LoginManager.getInstance()
+    val callbackManager = remember { CallbackManager.Factory.create() }
+
+    DisposableEffect(Unit) {
+        val callback = object : FacebookCallback<LoginResult> {
+            override fun onCancel() {}
+            override fun onError(error: FacebookException) {
+                Toast.makeText(context, "Facebook Error: ${error.message}", Toast.LENGTH_SHORT).show()
+            }
+            override fun onSuccess(result: LoginResult) {
+                scope.launch {
+                    isLoading = true
+                    val role = repository.signInWithFacebook(result.accessToken)
+                    isLoading = false
+                    if (role != null) {
+                        onRegisterSuccess(role)
+                    } else {
+                        Toast.makeText(context, "Facebook Auth Failed", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+        loginManager.registerCallback(callbackManager, callback)
+        onDispose { loginManager.unregisterCallback(callbackManager) }
+    }
+
+    val launchFacebook = {
+        loginManager.logInWithReadPermissions(context as Activity, listOf("email", "public_profile"))
+    }
+
+    // --- 3. GitHub Sign-In ---
+    val launchGithub = {
+        val provider = OAuthProvider.newBuilder("github.com")
+        provider.addCustomParameter("allow_signup", "true")
+
+        val activity = context as? Activity
+        if (activity != null) {
+            auth.startActivityForSignInWithProvider(activity, provider.build())
+                .addOnSuccessListener {
+                    scope.launch {
+                        isLoading = true
+                        val role = repository.onSignInWithGithubSuccess()
+                        isLoading = false
+                        if (role != null) onRegisterSuccess(role)
+                        else Toast.makeText(context, "GitHub Setup Failed", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                .addOnFailureListener { e ->
+                    Toast.makeText(context, "GitHub Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+        }
+    }
+
+    // ================= UI CONTENT =================
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.White)
     ) {
-        // 1. Blue Curved Header (Background)
+        // 1. Blue Curved Header
         Canvas(modifier = Modifier.fillMaxWidth().height(220.dp)) {
             val path = Path().apply {
                 moveTo(0f, 0f)
                 lineTo(size.width, 0f)
                 lineTo(size.width, size.height - 80)
-                quadraticBezierTo(
-                    size.width / 2, size.height + 40,
-                    0f, size.height - 80
-                )
+                quadraticBezierTo(size.width / 2, size.height + 40, 0f, size.height - 80)
                 close()
             }
             drawPath(path = path, color = BrandBlue)
         }
 
-        // 2. Main Content (Middle Layer)
+        // 2. Main Scrollable Content
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -143,53 +253,35 @@ fun RegisterScreen(
                         isPassword = true
                     )
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(24.dp))
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("I am a:", fontSize = 14.sp, color = Color.Gray, modifier = Modifier.padding(end = 8.dp))
-
-                        RoleOption(
-                            label = "Participant",
-                            selected = selectedRole == UserRole.PARTICIPANT,
-                            onClick = { selectedRole = UserRole.PARTICIPANT }
-                        )
-
-                        Spacer(modifier = Modifier.width(16.dp))
-
-                        RoleOption(
-                            label = "Organizer",
-                            selected = selectedRole == UserRole.ORGANIZER,
-                            onClick = { selectedRole = UserRole.ORGANIZER }
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(20.dp))
+                    // --- REMOVED: "I am a: Participant / Organizer" selection ---
 
                     if (isLoading) {
                         CircularProgressIndicator(color = BrandBlue)
                     } else {
                         Button(
                             onClick = {
+                                // --- VALIDATION CHECKS ---
                                 if (username.isBlank() || email.isBlank() || password.isBlank()) {
                                     Toast.makeText(context, "Please fill all fields", Toast.LENGTH_SHORT).show()
+                                } else if (!Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+                                    Toast.makeText(context, "Invalid email address", Toast.LENGTH_SHORT).show()
                                 } else if (password != confirmPassword) {
                                     Toast.makeText(context, "Passwords do not match", Toast.LENGTH_SHORT).show()
                                 } else if (password.length < 6) {
-                                    Toast.makeText(context, "Password must be 6+ chars", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Password must be at least 6 characters", Toast.LENGTH_SHORT).show()
                                 } else {
                                     scope.launch {
                                         isLoading = true
-                                        val success = repository.registerUser(email, password, selectedRole, username)
+                                        // Always register as defaultRole (PARTICIPANT)
+                                        val success = repository.registerUser(email, password, defaultRole, username)
                                         isLoading = false
                                         if (success) {
-                                            Toast.makeText(context, "Account Created!", Toast.LENGTH_SHORT).show()
-                                            onRegisterSuccess(selectedRole)
+                                            Toast.makeText(context, "Account Created Successfully!", Toast.LENGTH_SHORT).show()
+                                            onRegisterSuccess(defaultRole)
                                         } else {
-                                            Toast.makeText(context, "Registration Failed", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, "Registration Failed. Email might be in use.", Toast.LENGTH_LONG).show()
                                         }
                                     }
                                 }
@@ -206,13 +298,40 @@ fun RegisterScreen(
                     Text("Or sign up with", fontSize = 12.sp, color = Color.Gray)
                     Spacer(modifier = Modifier.height(12.dp))
 
+                    // --- SOCIAL ICONS ---
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        SocialIcon(iconResId = R.drawable.google_color_icon)
-                        SocialIcon(iconResId = R.drawable.facebook)
-                        SocialIcon(iconResId = R.drawable.github_icon)
+                        // Google
+                        Surface(
+                            modifier = Modifier.size(50.dp).clickable { launchGoogle() },
+                            shape = CircleShape, color = Color.White, shadowElevation = 4.dp
+                        ) {
+                            Box(modifier = Modifier.padding(12.dp), contentAlignment = Alignment.Center) {
+                                Image(painter = painterResource(id = R.drawable.google_color_icon), contentDescription = "Google", modifier = Modifier.fillMaxSize())
+                            }
+                        }
+
+                        // Facebook
+                        Surface(
+                            modifier = Modifier.size(50.dp).clickable { launchFacebook() },
+                            shape = CircleShape, color = Color.White, shadowElevation = 4.dp
+                        ) {
+                            Box(modifier = Modifier.padding(12.dp), contentAlignment = Alignment.Center) {
+                                Image(painter = painterResource(id = R.drawable.facebook), contentDescription = "Facebook", modifier = Modifier.fillMaxSize())
+                            }
+                        }
+
+                        // GitHub
+                        Surface(
+                            modifier = Modifier.size(50.dp).clickable { launchGithub() },
+                            shape = CircleShape, color = Color.White, shadowElevation = 4.dp
+                        ) {
+                            Box(modifier = Modifier.padding(12.dp), contentAlignment = Alignment.Center) {
+                                Image(painter = painterResource(id = R.drawable.github_icon), contentDescription = "GitHub", modifier = Modifier.fillMaxSize())
+                            }
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(20.dp))
@@ -231,6 +350,7 @@ fun RegisterScreen(
             Spacer(modifier = Modifier.height(24.dp))
         }
 
+        // Back Arrow
         IconButton(
             onClick = onBackClick,
             modifier = Modifier
