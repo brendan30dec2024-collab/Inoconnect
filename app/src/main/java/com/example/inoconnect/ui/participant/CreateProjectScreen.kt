@@ -45,7 +45,7 @@ import com.example.inoconnect.ui.auth.LightGrayInput
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
-@OptIn(ExperimentalMaterial3Api::class) // Added to suppress experimental warnings for InputChip
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateProjectScreen(
     onProjectCreated: () -> Unit,
@@ -291,7 +291,6 @@ fun CreateProjectScreen(
                                         selectedContainerColor = BrandBlue.copy(alpha = 0.1f),
                                         selectedLabelColor = BrandBlue
                                     ),
-                                    // FIX: Pass enabled and selected explicitly here
                                     border = InputChipDefaults.inputChipBorder(
                                         enabled = true,
                                         selected = true,
@@ -310,8 +309,14 @@ fun CreateProjectScreen(
                     } else {
                         Button(
                             onClick = {
+                                val teamSizeInt = targetTeamSize.toIntOrNull()
+
                                 if (title.isBlank() || deadline.isBlank() || targetTeamSize.isBlank()) {
                                     Toast.makeText(context, "Please fill required fields", Toast.LENGTH_SHORT).show()
+                                } else if (teamSizeInt == null || teamSizeInt <= 0) {
+                                    Toast.makeText(context, "Invalid team size", Toast.LENGTH_SHORT).show()
+                                } else if (teamSizeInt > 50) { // [FIX] Hard Limit Validation
+                                    Toast.makeText(context, "Team size cannot exceed 50 members", Toast.LENGTH_LONG).show()
                                 } else {
                                     scope.launch {
                                         isUploading = true
@@ -323,7 +328,7 @@ fun CreateProjectScreen(
                                             finalUrl,
                                             tags.toList(),
                                             deadline,
-                                            targetTeamSize.toIntOrNull() ?: 1
+                                            teamSizeInt
                                         )
 
                                         isUploading = false

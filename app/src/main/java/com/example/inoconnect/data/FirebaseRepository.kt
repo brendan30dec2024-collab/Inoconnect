@@ -19,6 +19,7 @@ import java.util.UUID
 import com.google.firebase.auth.FacebookAuthProvider
 import com.facebook.AccessToken
 import android.util.Log
+import com.google.firebase.auth.EmailAuthProvider
 
 
 
@@ -1015,6 +1016,29 @@ class FirebaseRepository {
             Log.e("FirebaseRepo", "Error sending reset email", e)
             false
         }
+    }
+
+    suspend fun reauthenticate(password: String): Boolean {
+        val user = auth.currentUser ?: return false
+        val credential = EmailAuthProvider.getCredential(user.email!!, password)
+        return try {
+            user.reauthenticate(credential).await()
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    suspend fun updatePassword(newPass: String) {
+        auth.currentUser?.updatePassword(newPass)?.await()
+    }
+
+    suspend fun deleteAccount() {
+        val uid = currentUserId ?: return
+        // 1. Delete Firestore Profile
+        db.collection("users").document(uid).delete().await()
+        // 2. Delete Auth Account
+        auth.currentUser?.delete()?.await()
     }
 
 

@@ -9,13 +9,10 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
@@ -100,17 +97,15 @@ fun ParticipantHome(
     // --- Scroll / Collapsing Header State ---
     val density = LocalDensity.current
 
-    // 1. Calculate Heights (Adjusted for Ratio)
-    // Sticky Tabs (Tabs + Search)
+    // 1. Calculate Heights
     val stickyTabsHeightDp = 120.dp
-    // Collapsible Content (Title ~70dp + Banner 180dp + Spacing)
-    // We set total header height to ensure Banner gets full 180dp.
+    // Collapsible Content
     val fullHeaderHeightDp = 400.dp
 
     val fullHeaderHeightPx = with(density) { fullHeaderHeightDp.toPx() }
     val stickyTabsHeightPx = with(density) { stickyTabsHeightDp.toPx() }
 
-    // Max Collapse = How much of the header scrolls away
+    // Max Collapse
     val maxCollapsePx = (fullHeaderHeightPx - stickyTabsHeightPx) * -1f
 
     var headerOffsetHeightPx by remember { mutableFloatStateOf(0f) }
@@ -210,7 +205,7 @@ fun ParticipantHome(
                     // --- PART A: Fading Banner (Collapsible) ---
                     Column(
                         modifier = Modifier
-                            .height(fullHeaderHeightDp - stickyTabsHeightDp) // ~280dp available
+                            .height(fullHeaderHeightDp - stickyTabsHeightDp)
                             .fillMaxWidth()
                             .alpha(1f - (-headerOffsetHeightPx / -maxCollapsePx))
                     ) {
@@ -261,7 +256,8 @@ fun ParticipantHome(
                         // Search Bar
                         Row(
                             modifier = Modifier
-                                .fillMaxSize()
+                                .fillMaxWidth()
+                                .height(60.dp)
                                 .padding(horizontal = 16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -309,19 +305,17 @@ fun HeroCarousel(bannerImages: List<Int>) {
             pagerState.animateScrollToPage(nextPage)
         }
     }
-    // We removed 'fillMaxSize()' and restored standard column behavior
     Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
         HorizontalPager(
             state = pagerState,
             contentPadding = PaddingValues(horizontal = 16.dp),
             pageSpacing = 8.dp
         ) { page ->
-            // FIX: Restored fixed height to maintain correct aspect ratio
             Card(
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(180.dp) // <--- Fixed height for correct ratio
+                    .height(180.dp)
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     AsyncImage(
@@ -397,8 +391,8 @@ fun ProjectList(
     contentPadding: PaddingValues
 ) {
     val filteredProjects = projects.filter { project ->
-        (project.title.contains(searchQuery, ignoreCase = true) || project.tags.any { it.contains(searchQuery, ignoreCase = true) }) &&
-                project.memberIds.size < project.targetTeamSize
+        (project.title.contains(searchQuery, ignoreCase = true) ||
+                project.tags.any { it.contains(searchQuery, ignoreCase = true) })
     }.let { list -> if (isSortedAsc) list.sortedBy { it.title } else list }
 
     if (filteredProjects.isEmpty()) {

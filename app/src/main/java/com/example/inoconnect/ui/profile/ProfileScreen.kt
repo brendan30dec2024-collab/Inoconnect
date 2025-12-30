@@ -37,7 +37,8 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ProfileScreen(
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onSettingsClick: () -> Unit // --- ADDED: Callback for Settings
 ) {
     val repository = remember { FirebaseRepository() }
     val scope = rememberCoroutineScope()
@@ -59,7 +60,7 @@ fun ProfileScreen(
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // ... (Keep existing Edit fields state: editName, editHeadline, etc.) ...
+    // Edit fields state
     var editName by remember { mutableStateOf("") }
     var editHeadline by remember { mutableStateOf("") }
     var editBio by remember { mutableStateOf("") }
@@ -103,7 +104,7 @@ fun ProfileScreen(
 
     LaunchedEffect(Unit) { loadUserData() }
 
-    // --- NEW: Helper to fetch and show users ---
+    // --- Helper to fetch and show users ---
     fun openUserList(title: String, userIds: List<String>) {
         userListTitle = title
         showUserListSheet = true
@@ -118,7 +119,6 @@ fun ProfileScreen(
         }
     }
 
-    // ... (Keep saveChanges and saveSkills logic) ...
     fun saveChanges() {
         scope.launch {
             try {
@@ -178,7 +178,6 @@ fun ProfileScreen(
             ) {
                 // ================= HEADER =================
                 Box(modifier = Modifier.fillMaxWidth()) {
-                    // ... (Keep existing Header logic for bgModel, etc.) ...
                     val bgModel: Any? = selectedBackgroundUri ?: user?.backgroundImageUrl?.takeIf { it.isNotEmpty() }
                     Box(modifier = Modifier.fillMaxWidth().height(160.dp).background(BrandBlue)) {
                         if (bgModel != null) {
@@ -189,6 +188,16 @@ fun ProfileScreen(
                                 contentScale = ContentScale.Crop
                             )
                         }
+                    }
+
+                    // --- NEW: Settings Icon ---
+                    IconButton(
+                        onClick = onSettingsClick,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 40.dp, end = 16.dp)
+                    ) {
+                        Icon(Icons.Default.Settings, "Settings", tint = Color.White)
                     }
 
                     Column(
@@ -216,7 +225,6 @@ fun ProfileScreen(
                 Column(modifier = Modifier.padding(horizontal = 24.dp)) {
                     Spacer(Modifier.height(16.dp))
 
-                    // --- UPDATED GRID ---
                     ProfileStatsGrid(
                         connections = user?.connectionsCount ?: 0,
                         following = user?.followingCount ?: 0,
@@ -231,7 +239,6 @@ fun ProfileScreen(
 
                     Spacer(Modifier.height(16.dp))
 
-                    // ... (Rest of UI remains identical: Edit Button, Academic Biodata, Skills, Contact, Logout) ...
                     OutlinedButton(
                         onClick = { showEditSheet = true },
                         modifier = Modifier.fillMaxWidth(),
@@ -293,10 +300,9 @@ fun ProfileScreen(
             }
         }
 
-        // ================= MAIN EDIT SHEET (Existing) =================
+        // ================= MAIN EDIT SHEET =================
         if (showEditSheet) {
             ModalBottomSheet(onDismissRequest = { showEditSheet = false }, sheetState = sheetState) {
-                // ... (Existing Edit Sheet Content) ...
                 Column(modifier = Modifier.padding(horizontal = 24.dp).padding(bottom = 40.dp).verticalScroll(rememberScrollState())) {
                     Text("Edit Profile Details", fontSize = 20.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(16.dp))
@@ -329,10 +335,9 @@ fun ProfileScreen(
             }
         }
 
-        // ================= SKILLS EDIT SHEET (Existing) =================
+        // ================= SKILLS EDIT SHEET =================
         if (showSkillsSheet) {
             ModalBottomSheet(onDismissRequest = { showSkillsSheet = false }, sheetState = sheetState) {
-                // ... (Existing Skills Sheet Content) ...
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -415,7 +420,7 @@ fun ProfileScreen(
             }
         }
 
-        // ================= USER LIST SHEET (NEW) =================
+        // ================= USER LIST SHEET =================
         if (showUserListSheet) {
             ModalBottomSheet(
                 onDismissRequest = { showUserListSheet = false },

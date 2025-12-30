@@ -2,9 +2,9 @@ package com.example.inoconnect.ui.participant
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List // --- CHANGED: Updated Import
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
@@ -19,6 +19,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.inoconnect.ui.auth.BrandBlue
+import com.example.inoconnect.ui.chat.MessagesScreen
 import com.example.inoconnect.ui.profile.ProfileScreen
 import com.example.inoconnect.ui.project_management.MyProjectScreen
 
@@ -72,7 +73,7 @@ fun ParticipantMainScreen(
                 val items = listOf("Home", "My Project", "Messages", "Connect", "Profile")
                 val icons = listOf(
                     Icons.Default.Home,
-                    Icons.Default.List,
+                    Icons.AutoMirrored.Filled.List, // --- CHANGED: Updated Icon
                     Icons.Default.Email,
                     Icons.Default.Share,
                     Icons.Default.Person
@@ -80,7 +81,7 @@ fun ParticipantMainScreen(
 
                 var selectedItem by remember { mutableIntStateOf(initialIndex) }
 
-                // Sync selectedItem with route changes if needed (optional refinement)
+                // Sync selectedItem with route changes
                 LaunchedEffect(currentRoute) {
                     when(currentRoute) {
                         "home" -> selectedItem = 0
@@ -141,7 +142,10 @@ fun ParticipantMainScreen(
                 MyNetworkScreen(onUserClick = { userId -> rootNavController.navigate("public_profile/$userId") })
             }
             composable("profile") {
-                ProfileScreen(onLogout = { rootNavController.navigate("login") { popUpTo(0) } })
+                ProfileScreen(
+                    onLogout = { rootNavController.navigate("login") { popUpTo(0) } },
+                    onSettingsClick = { rootNavController.navigate("settings") }
+                )
             }
         }
     }

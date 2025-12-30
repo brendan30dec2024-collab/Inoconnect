@@ -1,12 +1,14 @@
 package com.example.inoconnect.ui.participant
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable // --- IMPORT ADDED
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState // --- ADDED IMPORT
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll // --- ADDED IMPORT
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Person
@@ -27,12 +29,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.inoconnect.data.NetworkUser
 import com.example.inoconnect.ui.auth.BrandBlue
+import com.example.inoconnect.ui.network.MyNetworkViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MyNetworkScreen(
     viewModel: MyNetworkViewModel = viewModel(),
-    onUserClick: (String) -> Unit // --- ADDED: Callback for navigation
+    onUserClick: (String) -> Unit
 ) {
     // Collect Real-Time Data
     val suggestedUsers by viewModel.suggestedUsers.collectAsState()
@@ -47,6 +50,7 @@ fun MyNetworkScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFFF3F4F6))
+            .verticalScroll(rememberScrollState()) // --- FIX: Added scroll state
     ) {
         // Overview Section (Real Data)
         NetworkOverviewSection(

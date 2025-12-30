@@ -12,6 +12,7 @@ import com.example.inoconnect.data.UserRole
 import com.example.inoconnect.ui.auth.ForgotPasswordScreen
 import com.example.inoconnect.ui.auth.LoginScreen
 import com.example.inoconnect.ui.auth.RegisterScreen
+import com.example.inoconnect.ui.chat.DirectChatScreen
 import com.example.inoconnect.ui.organizer.CreateEventScreen
 import com.example.inoconnect.ui.organizer.OrganizerDashboard
 import com.example.inoconnect.ui.participant.CreateProjectScreen
@@ -20,7 +21,7 @@ import com.example.inoconnect.ui.participant.ParticipantMainScreen
 import com.example.inoconnect.ui.participant.ProjectDetailScreen
 import com.example.inoconnect.ui.profile.PublicProfileScreen
 import com.example.inoconnect.ui.project_management.ProjectManagementScreen
-
+import com.example.inoconnect.ui.profile.SettingsScreen
 @Composable
 fun AppNavigation() {
     val navController = rememberNavController()
@@ -146,7 +147,7 @@ fun AppNavigation() {
         // --- Direct Chat (Full Screen) ---
         composable("direct_chat/{channelId}") { backStackEntry ->
             val channelId = backStackEntry.arguments?.getString("channelId") ?: ""
-            com.example.inoconnect.ui.participant.DirectChatScreen(
+            DirectChatScreen(
                 channelId = channelId,
                 navController = navController,
                 onProfileClick = { userId ->
@@ -167,5 +168,14 @@ fun AppNavigation() {
             )
         }
 
+        composable("settings") {
+            SettingsScreen(
+                onBackClick = { navController.popBackStack() },
+                onLogout = {
+                    repository.logout()
+                    navController.navigate("login") { popUpTo(0) }
+                }
+            )
+        }
     }
 }

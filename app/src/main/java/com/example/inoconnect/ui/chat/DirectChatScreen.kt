@@ -1,4 +1,4 @@
-package com.example.inoconnect.ui.participant
+package com.example.inoconnect.ui.chat
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable

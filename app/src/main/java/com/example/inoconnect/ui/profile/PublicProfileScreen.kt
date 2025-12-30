@@ -43,7 +43,6 @@ fun PublicProfileScreen(
     var user by remember { mutableStateOf<User?>(null) }
     var isLoading by remember { mutableStateOf(true) }
 
-    // --- NEW: CONNECTION STATUS FLOW (Fixes Sync & Pending Bugs) ---
     val connectionStatus by repository.getConnectionStatusFlow(userId).collectAsState(initial = "loading")
 
     LaunchedEffect(userId) {
@@ -178,18 +177,19 @@ fun PublicProfileScreen(
                 Column(modifier = Modifier.padding(horizontal = 24.dp)) {
                     Spacer(Modifier.height(16.dp))
 
-                    // --- FIXED: Added empty lambdas to satisfy the new signature ---
                     ProfileStatsGrid(
                         connections = u.connectionsCount,
                         following = u.followingCount,
                         projects = u.projectsCompleted,
-                        onConnectionsClick = {}, // Action disabled on public profile
-                        onFollowingClick = {}    // Action disabled on public profile
+                        onConnectionsClick = {},
+                        onFollowingClick = {}
                     )
 
                     Spacer(Modifier.height(16.dp))
 
                     ProfileSectionCard(title = "Academic Biodata") {
+                        // [FIX] Added University Row
+                        InfoRow(Icons.Default.Info, "University", u.university)
                         InfoRow(Icons.Default.Home, "Faculty", u.faculty)
                         InfoRow(Icons.Default.List, "Course", u.course)
                         InfoRow(Icons.Default.DateRange, "Year", u.yearOfStudy)

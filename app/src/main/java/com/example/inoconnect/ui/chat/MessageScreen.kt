@@ -1,4 +1,4 @@
-package com.example.inoconnect.ui.participant
+package com.example.inoconnect.ui.chat
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -8,7 +8,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Notifications
@@ -31,6 +30,7 @@ import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.inoconnect.data.*
 import com.example.inoconnect.ui.auth.BrandBlue
+import com.google.firebase.Timestamp
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -401,7 +401,7 @@ fun CategoryDialog(
 fun NotificationItem(
     title: String,
     body: String,
-    time: com.google.firebase.Timestamp,
+    time: Timestamp,
     icon: ImageVector,
     showActions: Boolean = false,
     onConfirm: () -> Unit = {},

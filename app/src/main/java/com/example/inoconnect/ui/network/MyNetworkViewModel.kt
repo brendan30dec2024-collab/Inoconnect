@@ -1,4 +1,4 @@
-package com.example.inoconnect.ui.participant
+package com.example.inoconnect.ui.network
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
