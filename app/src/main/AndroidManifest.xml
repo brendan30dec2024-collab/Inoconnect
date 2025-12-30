@@ -25,8 +25,8 @@
             </intent-filter>
         </activity>
 
-        <meta-data android:name="com.facebook.sdk.ApplicationId" android:value="849737874572287"/>
-        <meta-data android:name="com.facebook.sdk.ClientToken" android:value="6af9385c435c75d02ec2d839ed917979"/>
+        <meta-data android:name="com.facebook.sdk.ApplicationId" android:value="${facebookAppId}"/>
+        <meta-data android:name="com.facebook.sdk.ClientToken" android:value="${facebookClientToken}"/>
 
         <activity android:name="com.facebook.FacebookActivity"
             android:configChanges="keyboard|keyboardHidden|screenLayout|screenSize|orientation"
@@ -39,8 +39,8 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="849737874572287" />
-            </intent-filter>
+                <data android:scheme="@string/fb_login_protocol_scheme" />            </intent-filter>
         </activity>
 
-    </application> </manifest>
+    </application>
+</manifest>

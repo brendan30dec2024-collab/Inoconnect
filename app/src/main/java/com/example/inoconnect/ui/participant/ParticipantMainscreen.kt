@@ -2,10 +2,11 @@ package com.example.inoconnect.ui.participant
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List // --- CHANGED: Updated Import
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Settings // --- ADDED IMPORT
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -64,7 +65,20 @@ fun ParticipantMainScreen(
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = Color.White
-                    )
+                    ),
+                    // --- NEW: Add Actions to Top Bar ---
+                    actions = {
+                        // Show Settings icon only on the Profile tab
+                        if (currentRoute == "profile") {
+                            IconButton(onClick = { rootNavController.navigate("settings") }) {
+                                Icon(
+                                    imageVector = Icons.Default.Settings,
+                                    contentDescription = "Settings",
+                                    tint = BrandBlue
+                                )
+                            }
+                        }
+                    }
                 )
             }
         },
@@ -73,7 +87,7 @@ fun ParticipantMainScreen(
                 val items = listOf("Home", "My Project", "Messages", "Connect", "Profile")
                 val icons = listOf(
                     Icons.Default.Home,
-                    Icons.AutoMirrored.Filled.List, // --- CHANGED: Updated Icon
+                    Icons.AutoMirrored.Filled.List,
                     Icons.Default.Email,
                     Icons.Default.Share,
                     Icons.Default.Person
@@ -142,9 +156,9 @@ fun ParticipantMainScreen(
                 MyNetworkScreen(onUserClick = { userId -> rootNavController.navigate("public_profile/$userId") })
             }
             composable("profile") {
+                // --- UPDATED: Removed onSettingsClick argument ---
                 ProfileScreen(
-                    onLogout = { rootNavController.navigate("login") { popUpTo(0) } },
-                    onSettingsClick = { rootNavController.navigate("settings") }
+                    onLogout = { rootNavController.navigate("login") { popUpTo(0) } }
                 )
             }
         }

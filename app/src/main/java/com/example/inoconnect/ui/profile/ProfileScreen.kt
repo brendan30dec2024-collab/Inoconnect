@@ -37,8 +37,8 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ProfileScreen(
-    onLogout: () -> Unit,
-    onSettingsClick: () -> Unit // --- ADDED: Callback for Settings
+    onLogout: () -> Unit
+    // onSettingsClick REMOVED: Handled in Main Screen TopBar now
 ) {
     val repository = remember { FirebaseRepository() }
     val scope = rememberCoroutineScope()
@@ -190,15 +190,7 @@ fun ProfileScreen(
                         }
                     }
 
-                    // --- NEW: Settings Icon ---
-                    IconButton(
-                        onClick = onSettingsClick,
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(top = 40.dp, end = 16.dp)
-                    ) {
-                        Icon(Icons.Default.Settings, "Settings", tint = Color.White)
-                    }
+                    // --- REMOVED SETTINGS ICON FROM HERE ---
 
                     Column(
                         modifier = Modifier.fillMaxWidth().padding(top = 100.dp),
