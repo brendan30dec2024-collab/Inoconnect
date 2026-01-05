@@ -31,6 +31,7 @@ androidx-compose-material = { group = "androidx.compose.material", name = "mater
 # ADDED: Support for Firebase Coroutines
 kotlinx-coroutines-play-services = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-play-services", version.ref = "coroutines" }
 
+androidx-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }

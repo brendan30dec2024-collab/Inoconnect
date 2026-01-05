@@ -2,13 +2,17 @@ package com.example.inoconnect.ui.profile
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List // --- CHANGED IMPORT
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -19,6 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -28,12 +33,13 @@ import com.example.inoconnect.ui.auth.BrandBlue
 import com.example.inoconnect.ui.auth.LightGrayInput
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun PublicProfileScreen(
     userId: String,
     onBackClick: () -> Unit,
-    onMessageClick: (String) -> Unit
+    onMessageClick: (String) -> Unit,
+    onNavigateToProfile: (String) -> Unit
 ) {
     val repository = remember { FirebaseRepository() }
     val scope = rememberCoroutineScope()
@@ -43,11 +49,30 @@ fun PublicProfileScreen(
     var user by remember { mutableStateOf<User?>(null) }
     var isLoading by remember { mutableStateOf(true) }
 
+    // --- Sheets State ---
+    var showConnectionsSheet by remember { mutableStateOf(false) }
+    var showFollowingSheet by remember { mutableStateOf(false) }
+    var sheetUsers by remember { mutableStateOf<List<User>>(emptyList()) }
+    val sheetState = rememberModalBottomSheetState()
+
     val connectionStatus by repository.getConnectionStatusFlow(userId).collectAsState(initial = "loading")
 
     LaunchedEffect(userId) {
+        isLoading = true
         user = repository.getUserById(userId)
         isLoading = false
+    }
+
+    // --- Helper to Load List ---
+    fun loadListAndShow(ids: List<String>, isFollowing: Boolean) {
+        scope.launch {
+            if (ids.isNotEmpty()) {
+                sheetUsers = repository.getUsersByIds(ids)
+            } else {
+                sheetUsers = emptyList()
+            }
+            if (isFollowing) showFollowingSheet = true else showConnectionsSheet = true
+        }
     }
 
     Scaffold { padding ->
@@ -181,17 +206,18 @@ fun PublicProfileScreen(
                         connections = u.connectionsCount,
                         following = u.followingCount,
                         projects = u.projectsCompleted,
-                        onConnectionsClick = {},
-                        onFollowingClick = {}
+                        onConnectionsClick = { loadListAndShow(u.connectionIds, false) },
+                        onFollowingClick = { loadListAndShow(u.followingIds, true) },
+                        onProjectsClick = {} // --- FIX: Added empty lambda for now
                     )
 
                     Spacer(Modifier.height(16.dp))
 
                     ProfileSectionCard(title = "Academic Biodata") {
-                        // [FIX] Added University Row
                         InfoRow(Icons.Default.Info, "University", u.university)
                         InfoRow(Icons.Default.Home, "Faculty", u.faculty)
-                        InfoRow(Icons.Default.List, "Course", u.course)
+                        // --- FIX: Use AutoMirrored Icon ---
+                        InfoRow(Icons.AutoMirrored.Filled.List, "Course", u.course)
                         InfoRow(Icons.Default.DateRange, "Year", u.yearOfStudy)
                         HorizontalDivider(
                             Modifier.padding(vertical = 12.dp),
@@ -234,6 +260,90 @@ fun PublicProfileScreen(
                     }
                     Spacer(Modifier.height(40.dp))
                 }
+            }
+        }
+    }
+
+    // --- BOTTOM SHEET FOR LISTS ---
+    if (showConnectionsSheet || showFollowingSheet) {
+        ModalBottomSheet(
+            onDismissRequest = {
+                showConnectionsSheet = false
+                showFollowingSheet = false
+            },
+            sheetState = sheetState,
+            containerColor = Color.White
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.8f)
+                    .padding(16.dp)
+            ) {
+                Text(
+                    text = if (showFollowingSheet) "Following" else "Connections",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                )
+                Spacer(Modifier.height(16.dp))
+
+                if (sheetUsers.isEmpty()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("No users found.", color = Color.Gray)
+                    }
+                } else {
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(sheetUsers) { user ->
+                            CompactUserRow(user) {
+                                showConnectionsSheet = false
+                                showFollowingSheet = false
+                                onNavigateToProfile(user.userId)
+                            }
+                            HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CompactUserRow(user: User, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Surface(
+            shape = CircleShape,
+            modifier = Modifier.size(50.dp),
+            color = Color(0xFFE0E0E0)
+        ) {
+            if (user.profileImageUrl.isNotEmpty()) {
+                AsyncImage(
+                    model = user.profileImageUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Icon(Icons.Default.Person, null, tint = Color.White, modifier = Modifier.padding(10.dp))
+            }
+        }
+        Spacer(Modifier.width(16.dp))
+        Column {
+            Text(user.username, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            if (user.headline.isNotEmpty()) {
+                Text(
+                    user.headline,
+                    color = Color.Gray,
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }

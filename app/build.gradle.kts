@@ -87,7 +87,6 @@ dependencies {
 
     implementation("io.coil-kt:coil-compose:2.7.0")
 
-    // --- Testing ---
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -99,4 +98,5 @@ dependencies {
     implementation("com.google.firebase:firebase-messaging")
     implementation("com.facebook.android:facebook-login:17.0.0")
     implementation("com.google.android.gms:play-services-auth:21.4.0")
+    implementation(libs.androidx.material.icons.extended)
 }
