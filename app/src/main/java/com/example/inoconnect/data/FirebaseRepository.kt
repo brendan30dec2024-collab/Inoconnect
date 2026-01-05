@@ -83,18 +83,12 @@ class FirebaseRepository {
         }
     }
 
-    // --- REMAINDER OF FILE STAYS EXACTLY THE SAME ---
-    // (Include the rest of your existing functions: logout, social logins, file uploads, etc.)
-    // For brevity, assuming the rest of the file content from previous uploads exists here.
-
     fun logout() {
         auth.signOut()
+
     }
 
-    // ... [Include all other existing methods here] ...
-
     suspend fun signInWithGoogle(idToken: String): String? {
-        // [Existing Google Logic]
         return try {
             val credential = GoogleAuthProvider.getCredential(idToken, null)
             val result = auth.signInWithCredential(credential).await()
@@ -120,7 +114,6 @@ class FirebaseRepository {
     }
 
     suspend fun onSignInWithGithubSuccess(): String? {
-        // [Existing Github Logic]
         val user = auth.currentUser ?: return null
         return try {
             val docRef = db.collection("users").document(user.uid)
@@ -144,7 +137,6 @@ class FirebaseRepository {
     }
 
     suspend fun signInWithFacebook(token: AccessToken): String? {
-        // [Existing Facebook Logic]
         return try {
             val credential = FacebookAuthProvider.getCredential(token.token)
             val result = auth.signInWithCredential(credential).await()
@@ -197,9 +189,11 @@ class FirebaseRepository {
         auth.currentUser?.delete()?.await()
     }
 
-    suspend fun uploadFile(uri: Uri, folder: String = "uploads"): String? {
+    // --- UPDATED: Added extension parameter to ensure files have proper types ---
+    suspend fun uploadFile(uri: Uri, folder: String = "uploads", extension: String? = null): String? {
         return try {
-            val filename = "${UUID.randomUUID()}"
+            val extSuffix = if (extension != null) ".$extension" else ""
+            val filename = "${UUID.randomUUID()}$extSuffix"
             val ref = storage.reference.child("$folder/$filename")
             ref.putFile(uri).await()
             ref.downloadUrl.await().toString()
@@ -209,8 +203,9 @@ class FirebaseRepository {
         }
     }
 
+    // --- UPDATED: Pass "jpg" extension for images ---
     suspend fun uploadImage(imageUri: Uri): String? {
-        return uploadFile(imageUri, "images")
+        return uploadFile(imageUri, "images", "jpg")
     }
 
     suspend fun getUserById(userId: String): User? {
@@ -275,6 +270,7 @@ class FirebaseRepository {
         val subscription = db.collection("users")
             .whereGreaterThanOrEqualTo("username", query)
             .whereLessThan("username", query + "\uf8ff")
+            .limit(20) // Added limit for safety
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     close(error)
@@ -425,10 +421,12 @@ class FirebaseRepository {
         myRef.update("followingCount", FieldValue.increment(1)).await()
     }
 
+    // --- UPDATED: Added limit(50) to prevent reading the entire database ---
     fun getSuggestedUsersFlow(): Flow<List<NetworkUser>> {
         val uid = currentUserId ?: return flowOf(emptyList())
         val usersFlow = callbackFlow {
             val listener = db.collection("users")
+                .limit(50) // Fix: Limit read operations
                 .addSnapshotListener { snapshot, _ ->
                     val users = snapshot?.toObjects(User::class.java) ?: emptyList()
                     trySend(users)
@@ -768,6 +766,7 @@ class FirebaseRepository {
             .await()
     }
 
+    // --- UPDATED: Pass extension based on type ---
     suspend fun sendMessage(
         channelId: String,
         content: String,
@@ -784,7 +783,13 @@ class FirebaseRepository {
                 "video" -> "chat_videos"
                 else -> "chat_files"
             }
-            attachmentUrl = uploadFile(attachmentUri, folder)
+            // Simple extension mapping
+            val ext = when(attachmentType) {
+                "image" -> "jpg"
+                "video" -> "mp4"
+                else -> null // Let uploadFile handle no extension or caller should have passed it
+            }
+            attachmentUrl = uploadFile(attachmentUri, folder, ext)
         }
 
         val myUser = getUserById(uid)

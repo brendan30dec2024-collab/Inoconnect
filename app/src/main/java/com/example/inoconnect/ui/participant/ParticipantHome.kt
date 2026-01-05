@@ -44,8 +44,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-// --- GLOBAL FLAG FOR ONE-TIME WELCOME ---
-private var sessionWelcomeShown = false
+// --- UPDATED: Track User ID instead of a boolean flag ---
+// This ensures the message resets if a different user logs in,
+// but stays hidden if the SAME user just navigates back and forth.
+private var lastWelcomedUserId: String? = null
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -76,16 +78,20 @@ fun ParticipantHome(
         isLoading = false
     }
 
-    // --- Welcome Logic (Once Per Session) ---
+    // --- UPDATED: Welcome Logic ---
     LaunchedEffect(userProfile) {
-        if (!sessionWelcomeShown && userProfile != null) {
+        val currentUser = userProfile
+        if (currentUser != null && currentUser.userId != lastWelcomedUserId) {
+            // Update the tracker immediately so it doesn't fire again
+            lastWelcomedUserId = currentUser.userId
+
             delay(500)
             snackbarHostState.showSnackbar(
-                message = "Welcome back, ${userProfile!!.username}",
+                message = "Welcome back, ${currentUser.username}",
                 duration = SnackbarDuration.Short,
-                withDismissAction = true
+                // Removed 'withDismissAction = true' so it auto-dismisses smoothly
+                withDismissAction = false
             )
-            sessionWelcomeShown = true
         }
     }
 
