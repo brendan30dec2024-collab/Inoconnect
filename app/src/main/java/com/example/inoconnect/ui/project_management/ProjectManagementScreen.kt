@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -30,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.navigation.NavController
 import com.example.inoconnect.data.FirebaseRepository
 import com.example.inoconnect.data.Milestone
 import com.example.inoconnect.data.NotificationType
@@ -45,18 +47,16 @@ import kotlinx.coroutines.launch
 fun ProjectManagementScreen(
     projectId: String,
     onBackClick: () -> Unit,
-    onNavigateToProfile: (String) -> Unit
+    onNavigateToProfile: (String) -> Unit,
+    navController: NavController
 ) {
     val repository = remember { FirebaseRepository() }
     val scope = rememberCoroutineScope()
-
-    // --- NEW: Snackbar State for Pop-up Messages ---
     val snackbarHostState = remember { SnackbarHostState() }
 
     var project by remember { mutableStateOf<Project?>(null) }
     var pendingUsers by remember { mutableStateOf<List<User>>(emptyList()) }
     var memberUsers by remember { mutableStateOf<List<User>>(emptyList()) }
-    var currentUserName by remember { mutableStateOf("") }
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var isLoading by remember { mutableStateOf(true) }
@@ -65,21 +65,14 @@ fun ProjectManagementScreen(
         scope.launch {
             val p = repository.getProjectById(projectId)
             project = p
-
             if (p != null) {
                 pendingUsers = if (p.pendingApplicantIds.isNotEmpty()) repository.getUsersByIds(p.pendingApplicantIds) else emptyList()
                 memberUsers = if (p.memberIds.isNotEmpty()) repository.getUsersByIds(p.memberIds) else emptyList()
-            }
-
-            val uid = repository.currentUserId
-            if (uid != null) {
-                currentUserName = repository.getUserById(uid)?.username ?: "Unknown"
             }
             isLoading = false
         }
     }
 
-    // Handlers (Optimistic Updates)
     val onToggleMilestone: (Milestone) -> Unit = { milestone ->
         val currentProject = project
         if (currentProject != null) {
@@ -106,12 +99,10 @@ fun ProjectManagementScreen(
 
     LaunchedEffect(projectId) { refreshData() }
 
-    // --- WRAP IN SCAFFOLD TO SUPPORT SNACKBAR ---
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = Color.White
     ) { padding ->
-        // Apply padding to avoid content being hidden behind system bars if applicable
         Box(modifier = Modifier.padding(padding).fillMaxSize()) {
             if (isLoading || project == null) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -122,8 +113,8 @@ fun ProjectManagementScreen(
                 val isCreator = p.creatorId == repository.currentUserId
 
                 val tabs = remember(isCreator) {
-                    if (isCreator) listOf("Overview", "Milestones", "Chat", "Admin")
-                    else listOf("Overview", "Milestones", "Chat")
+                    if (isCreator) listOf("Overview", "Milestones", "Admin")
+                    else listOf("Overview", "Milestones")
                 }
 
                 Column(modifier = Modifier.fillMaxSize().background(Color.White)) {
@@ -135,7 +126,8 @@ fun ProjectManagementScreen(
                                 moveTo(0f, 0f)
                                 lineTo(size.width, 0f)
                                 lineTo(size.width, size.height - 50)
-                                quadraticBezierTo(size.width / 2, size.height + 50, 0f, size.height - 50)
+                                // FIXED: Replaced deprecated quadraticBezierTo with quadraticTo
+                                quadraticTo(size.width / 2, size.height + 50, 0f, size.height - 50)
                                 close()
                             }
                             drawPath(path = path, color = BrandBlue)
@@ -146,6 +138,16 @@ fun ProjectManagementScreen(
                             modifier = Modifier.padding(top = 40.dp, start = 16.dp).align(Alignment.TopStart)
                         ) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
+                        }
+
+                        // FIXED: Replaced deprecated Chat icon with AutoMirrored version
+                        IconButton(
+                            onClick = {
+                                navController.navigate("group_chat/project_${p.projectId}")
+                            },
+                            modifier = Modifier.padding(top = 40.dp, end = 16.dp).align(Alignment.TopEnd)
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.Chat, "Group Chat", tint = Color.White)
                         }
 
                         Text(
@@ -189,7 +191,6 @@ fun ProjectManagementScreen(
                         modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp)
                     ) {
                         when (selectedTab) {
-                            // --- PASSING SNACKBAR CALLBACK ---
                             0 -> OverviewTab(
                                 project = p,
                                 members = memberUsers,
@@ -200,8 +201,7 @@ fun ProjectManagementScreen(
                                 onShowMessage = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } }
                             )
                             1 -> MilestonesTab(p, repository, { refreshData() }, onToggleMilestone, onDeleteMilestone)
-                            2 -> ChatTab(p.projectId, currentUserName)
-                            3 -> if (isCreator) AdminTab(p, pendingUsers, repository, onBackClick, { refreshData() }, onNavigateToProfile)
+                            2 -> if (isCreator) AdminTab(p, pendingUsers, repository, onBackClick, { refreshData() }, onNavigateToProfile)
                         }
                     }
                 }
@@ -210,9 +210,6 @@ fun ProjectManagementScreen(
     }
 }
 
-// ==========================================
-//               TAB: OVERVIEW
-// ==========================================
 @Composable
 fun OverviewTab(
     project: Project,
@@ -221,14 +218,13 @@ fun OverviewTab(
     repository: FirebaseRepository,
     onViewProfile: (String) -> Unit,
     onRefresh: () -> Unit,
-    onShowMessage: (String) -> Unit // --- NEW CALLBACK ---
+    onShowMessage: (String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
     val total = project.milestones.size
     val completed = project.milestones.count { it.isCompleted }
     val progress = if (total > 0) completed.toFloat() / total else 0f
 
-    // --- SEARCH STATE (Owner Only) ---
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<User>>(emptyList()) }
 
@@ -266,7 +262,6 @@ fun OverviewTab(
             Spacer(modifier = Modifier.height(30.dp))
         }
 
-        // --- INVITE SECTION (OWNER ONLY) ---
         if (isCreator) {
             item {
                 Text(
@@ -322,7 +317,6 @@ fun OverviewTab(
                                 }
                                 Button(
                                     onClick = {
-                                        // --- NEW: CHECK IF TEAM IS FULL ---
                                         if (project.memberIds.size >= project.targetTeamSize) {
                                             onShowMessage("Team is full! Maximum ${project.targetTeamSize} members allowed.")
                                         } else {
@@ -355,7 +349,6 @@ fun OverviewTab(
             }
         }
 
-        // --- EXISTING MEMBERS ---
         item {
             Text("Team Members (${members.size}/${project.targetTeamSize})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
             Spacer(modifier = Modifier.height(10.dp))
@@ -398,7 +391,6 @@ fun OverviewTab(
     }
 }
 
-// ... (MilestonesTab, MilestoneTaskCard, AdminTab remain unchanged) ...
 @Composable
 fun MilestonesTab(
     project: Project,

@@ -184,10 +184,9 @@ class FirebaseRepository {
     }
 
     // ============================================================================================
-    // STORAGE & FILES (NEW LOGIC)
+    // STORAGE & FILES
     // ============================================================================================
 
-    // Generic upload function for different file types
     suspend fun uploadFile(uri: Uri, folder: String = "uploads"): String? {
         return try {
             val filename = "${UUID.randomUUID()}"
@@ -200,7 +199,6 @@ class FirebaseRepository {
         }
     }
 
-    // Redirects to generic, kept for your original code compatibility
     suspend fun uploadImage(imageUri: Uri): String? {
         return uploadFile(imageUri, "images")
     }
@@ -295,7 +293,9 @@ class FirebaseRepository {
             val listener = db.collection("users").document(uid)
                 .addSnapshotListener { snapshot, _ ->
                     if (snapshot != null && snapshot.exists()) {
-                        val ids = snapshot.get("connectionIds") as? List<String> ?: emptyList()
+                        // FIXED: Safe cast for generic List
+                        val rawList = snapshot.get("connectionIds") as? List<*>
+                        val ids = rawList?.filterIsInstance<String>() ?: emptyList()
                         trySend(ids.contains(otherUserId))
                     } else {
                         trySend(false)
@@ -576,9 +576,11 @@ class FirebaseRepository {
     ) {
         val uid = currentUserId ?: return
         val newDoc = db.collection("projects").document()
+        val projectId = newDoc.id
         val initialMembers = listOf(uid)
+
         val project = Project(
-            projectId = newDoc.id,
+            projectId = projectId,
             creatorId = uid,
             title = title,
             description = description,
@@ -589,6 +591,20 @@ class FirebaseRepository {
             targetTeamSize = targetTeamSize
         )
         newDoc.set(project).await()
+
+        // Create corresponding Chat Channel
+        val channelId = "project_$projectId"
+        val channel = ChatChannel(
+            channelId = channelId,
+            type = ChannelType.PROJECT_GROUP,
+            projectId = projectId,
+            groupName = title, // Default name is project title
+            groupImageUrl = imageUrl, // Default image is project image
+            participantIds = initialMembers,
+            lastMessage = "Project created",
+            lastMessageTimestamp = Timestamp.now()
+        )
+        db.collection("chat_channels").document(channelId).set(channel).await()
     }
 
     suspend fun getProjectById(projectId: String): Project? {
@@ -695,6 +711,12 @@ class FirebaseRepository {
             transaction.update(ref, "pendingApplicantIds", FieldValue.arrayRemove(applicantId))
             transaction.update(ref, "memberIds", FieldValue.arrayUnion(applicantId))
         }.await()
+
+        // Add user to Chat Channel
+        db.collection("chat_channels").document("project_$projectId")
+            .update("participantIds", FieldValue.arrayUnion(applicantId))
+            .await()
+
         val project = getProjectById(projectId)
         val projectTitle = project?.title ?: "a project"
         sendNotification(
@@ -725,6 +747,12 @@ class FirebaseRepository {
         db.collection("projects").document(projectId)
             .update("memberIds", FieldValue.arrayRemove(memberId))
             .await()
+
+        // Remove user from Chat Channel
+        db.collection("chat_channels").document("project_$projectId")
+            .update("participantIds", FieldValue.arrayRemove(memberId))
+            .await()
+
         val project = getProjectById(projectId)
         val projectTitle = project?.title ?: "a project"
         sendNotification(
@@ -745,43 +773,28 @@ class FirebaseRepository {
     }
 
     // ============================================================================================
-    // PROJECT CHAT (GROUP)
+    // DIRECT & GROUP MESSAGING (UNIFIED)
     // ============================================================================================
 
-    suspend fun sendMessage(projectId: String, messageText: String, senderName: String) {
-        val uid = currentUserId ?: return
-        val newMsgRef = db.collection("projects").document(projectId).collection("messages").document()
-        val message = ChatMessage(id = newMsgRef.id, senderId = uid, senderName = senderName, message = messageText, timestamp = Timestamp.now())
-        newMsgRef.set(message).await()
+    // Function for Admin to rename Group Chat
+    suspend fun updateGroupChatName(channelId: String, newName: String) {
+        db.collection("chat_channels").document(channelId)
+            .update("groupName", newName)
+            .await()
     }
 
-    fun getProjectMessages(projectId: String): Flow<List<ChatMessage>> = callbackFlow {
-        val subscription = db.collection("projects").document(projectId)
-            .collection("messages")
-            .orderBy("timestamp", Query.Direction.DESCENDING)
-            .addSnapshotListener { snapshot, error ->
-                if (error == null && snapshot != null) trySend(snapshot.toObjects(ChatMessage::class.java))
-            }
-        awaitClose { subscription.remove() }
-    }
-
-    // ============================================================================================
-    // DIRECT MESSAGING & NOTIFICATIONS (UPDATED WITH ATTACHMENTS)
-    // ============================================================================================
-
-    // Updated Send Direct Message to handle Attachments
-    // Updated to accept attachmentName and attachmentSize
-    suspend fun sendDirectMessage(
-        toUserId: String,
+    // Updated: Send Message (Handles both Direct and Group based on usage)
+    suspend fun sendMessage(
+        channelId: String,
         content: String,
         attachmentUri: Uri? = null,
         attachmentType: String? = null,
-        attachmentName: String? = null, // Added
-        attachmentSize: String? = null  // Added
+        attachmentName: String? = null,
+        attachmentSize: String? = null
     ) {
         val uid = currentUserId ?: return
 
-        // 1. Upload Attachment if exists
+        // 1. Upload Attachment
         var attachmentUrl: String? = null
         if (attachmentUri != null && attachmentType != null) {
             val folder = when(attachmentType) {
@@ -792,38 +805,63 @@ class FirebaseRepository {
             attachmentUrl = uploadFile(attachmentUri, folder)
         }
 
-        // 2. Get My Username for the notification
         val myUser = getUserById(uid)
-        val myName = myUser?.username ?: "Someone"
+        val myName = myUser?.username ?: "User"
 
-        val channelId = if (uid < toUserId) "${uid}_$toUserId" else "${toUserId}_$uid"
         val channelRef = db.collection("chat_channels").document(channelId)
 
-        // 3. Determine text for last message preview
+        // --- SELF-HEALING: Ensure Channel Exists for Project Groups ---
+        // This fixes the issue where old projects (created before chat was added)
+        // wouldn't show up in the message list because the channel doc was missing/empty.
+        if (channelId.startsWith("project_")) {
+            val docSnap = channelRef.get().await()
+            // Check if missing doc or missing participantIds
+            val isMissingData = !docSnap.exists() || docSnap.get("participantIds") == null
+
+            if (isMissingData) {
+                val projectId = channelId.removePrefix("project_")
+                val pSnap = db.collection("projects").document(projectId).get().await()
+                val project = pSnap.toObject(Project::class.java)
+
+                if (project != null) {
+                    // Repair or Create the Channel info
+                    val baseData = mapOf(
+                        "channelId" to channelId,
+                        "type" to ChannelType.PROJECT_GROUP,
+                        "projectId" to projectId,
+                        "groupName" to project.title,
+                        "groupImageUrl" to project.imageUrl,
+                        "participantIds" to project.memberIds
+                    )
+                    channelRef.set(baseData, SetOptions.merge()).await()
+                }
+            }
+        }
+        // -------------------------------------------------------------
+
+        // 2. Determine Preview Text
         val previewText = if (attachmentUrl != null) {
             "[$attachmentType] ${if(content.isNotBlank()) content else ""}"
         } else {
             content
         }
 
-        // 4. Update Channel
-        val channelUpdate = mapOf(
-            "channelId" to channelId,
-            "participantIds" to listOf(uid, toUserId),
-            "lastMessage" to previewText,
+        // 3. Update Channel Meta (Last Message)
+        val lastMessageText = if(channelId.startsWith("project_")) "$myName: $previewText" else previewText
+
+        val channelUpdate = mutableMapOf<String, Any>(
+            "lastMessage" to lastMessageText,
             "lastMessageTimestamp" to Timestamp.now(),
             "lastSenderId" to uid
         )
         channelRef.set(channelUpdate, SetOptions.merge()).await()
 
-        // 5. Add Message
+        // 4. Add Message to Subcollection
         val msgRef = channelRef.collection("messages").document()
-
-        // We use a Map here to safely save extra fields even if your DirectMessage
-        // data class hasn't been updated yet.
         val msgData = hashMapOf(
             "id" to msgRef.id,
             "senderId" to uid,
+            "senderName" to myName, // Store sender name for groups
             "content" to content,
             "attachmentUrl" to attachmentUrl,
             "attachmentType" to attachmentType,
@@ -831,28 +869,51 @@ class FirebaseRepository {
             "attachmentSize" to attachmentSize,
             "timestamp" to Timestamp.now()
         )
-
         msgRef.set(msgData).await()
+    }
 
-        // 6. Send Notification
+    // Helper for direct message sending (wrapper around generic sendMessage)
+    suspend fun sendDirectMessage(
+        toUserId: String, content: String, attachmentUri: Uri? = null,
+        attachmentType: String? = null, attachmentName: String? = null, attachmentSize: String? = null
+    ) {
+        val uid = currentUserId ?: return
+        val channelId = if (uid < toUserId) "${uid}_$toUserId" else "${toUserId}_$uid"
+
+        // Ensure channel exists for DMs
+        val channelRef = db.collection("chat_channels").document(channelId)
+        val snapshot = channelRef.get().await()
+        if (!snapshot.exists()) {
+            val channel = ChatChannel(
+                channelId = channelId,
+                type = ChannelType.DIRECT,
+                participantIds = listOf(uid, toUserId)
+            )
+            channelRef.set(channel).await()
+        }
+
+        sendMessage(channelId, content, attachmentUri, attachmentType, attachmentName, attachmentSize)
+
+        // Send Notification for DM
+        val myUser = getUserById(uid)
         sendNotification(
             toUserId = toUserId,
             type = NotificationType.NEW_DM,
             title = "New Message",
-            message = "$myName sent you a message.",
+            message = "${myUser?.username ?: "Someone"} sent you a message.",
             relatedId = channelId
         )
     }
 
+    // Fetches ALL channels (Direct + Group)
     fun getChatChannelsFlow(): Flow<List<ChatChannel>> = callbackFlow {
         val uid = currentUserId
         if (uid == null) { trySend(emptyList()); close(); return@callbackFlow }
+
         val sub = db.collection("chat_channels")
             .whereArrayContains("participantIds", uid)
             .addSnapshotListener { snap, error ->
-                if (error != null) {
-                    return@addSnapshotListener
-                }
+                if (error != null) { return@addSnapshotListener }
                 if (snap != null) {
                     val channels = snap.toObjects(ChatChannel::class.java)
                     val sortedChannels = channels.sortedByDescending { it.lastMessageTimestamp }

@@ -3,9 +3,18 @@ package com.example.inoconnect.data
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.PropertyName
 
-// 1. Direct Message Channel (Represents a conversation between 2 users)
+enum class ChannelType {
+    DIRECT,
+    PROJECT_GROUP
+}
+
+// 1. Direct/Group Message Channel
 data class ChatChannel(
     val channelId: String = "",
+    val type: ChannelType = ChannelType.DIRECT, // Distinguish types
+    val projectId: String? = null,              // Link to project (if group)
+    val groupName: String? = null,              // For group chats
+    val groupImageUrl: String? = null,          // For group chats
     val participantIds: List<String> = emptyList(),
     val lastMessage: String = "",
     val lastMessageTimestamp: Timestamp = Timestamp.now(),
@@ -16,13 +25,14 @@ data class ChatChannel(
 data class DirectMessage(
     val id: String = "",
     val senderId: String = "",
+    val senderName: String? = null, // Useful for group chats to identify sender
     val content: String = "",
     val timestamp: Timestamp = Timestamp.now(),
     val isRead: Boolean = false,
     val attachmentUrl: String? = null,
     val attachmentType: String? = null, // "image", "video", "file"
-    val attachmentName: String? = null, // NEW: File name
-    val attachmentSize: String? = null  // NEW: File size string (e.g., "2.5 MB")
+    val attachmentName: String? = null,
+    val attachmentSize: String? = null
 )
 
 // 3. System Notification
@@ -41,17 +51,15 @@ data class AppNotification(
 )
 
 enum class NotificationType {
-    PROJECT_INVITE,       // "You have been invited to join X"
-    PROJECT_DECLINE,      // "Your request to join X was declined"
-    NEW_FOLLOWER,         // "User X wants to follow/connect"
-    NEW_DM,               // "New message from User X"
-    SYSTEM_ALERT,         // System messages
-    CONNECTION_ACCEPTED,  // "You are now connected with X"
-
-    // --- NEW TYPES ---
-    PROJECT_JOIN_REQUEST, // "User X wants to join your project"
-    PROJECT_REMOVAL,      // "You were removed from project X"
-    PROJECT_ACCEPTED,     // "You were accepted into project X"
-    NEW_EVENT,            // "New event published by X"
-    WELCOME_MESSAGE       // "Welcome to InnoConnect"
+    PROJECT_INVITE,
+    PROJECT_DECLINE,
+    NEW_FOLLOWER,
+    NEW_DM,
+    SYSTEM_ALERT,
+    CONNECTION_ACCEPTED,
+    PROJECT_JOIN_REQUEST,
+    PROJECT_REMOVAL,
+    PROJECT_ACCEPTED,
+    NEW_EVENT,
+    WELCOME_MESSAGE
 }

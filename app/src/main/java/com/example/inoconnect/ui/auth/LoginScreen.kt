@@ -9,8 +9,10 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Lock
@@ -45,7 +47,7 @@ import com.facebook.login.LoginResult
 fun LoginScreen(
     onLoginSuccess: (String) -> Unit,
     onRegisterClick: () -> Unit,
-    onForgotPasswordClick: () -> Unit // Updated to support navigation
+    onForgotPasswordClick: () -> Unit
 ) {
     val repository = remember { FirebaseRepository() }
     val scope = rememberCoroutineScope()
@@ -169,7 +171,9 @@ fun LoginScreen(
         }
 
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()), // FIXED: Added Scroll State
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(modifier = Modifier.height(140.dp))
@@ -280,6 +284,7 @@ fun LoginScreen(
                     }
                 }
             }
+            Spacer(modifier = Modifier.height(40.dp)) // Bottom padding for scroll
         }
     }
 }

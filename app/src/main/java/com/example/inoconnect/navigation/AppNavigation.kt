@@ -2,17 +2,18 @@ package com.example.inoconnect.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import androidx.navigation.NavType
 import com.example.inoconnect.data.FirebaseRepository
 import com.example.inoconnect.data.UserRole
 import com.example.inoconnect.ui.auth.ForgotPasswordScreen
 import com.example.inoconnect.ui.auth.LoginScreen
 import com.example.inoconnect.ui.auth.RegisterScreen
 import com.example.inoconnect.ui.chat.DirectChatScreen
+import com.example.inoconnect.ui.chat.GroupChatScreen
 import com.example.inoconnect.ui.organizer.CreateEventScreen
 import com.example.inoconnect.ui.organizer.OrganizerDashboard
 import com.example.inoconnect.ui.participant.CreateProjectScreen
@@ -20,8 +21,8 @@ import com.example.inoconnect.ui.participant.EventDetailScreen
 import com.example.inoconnect.ui.participant.ParticipantMainScreen
 import com.example.inoconnect.ui.participant.ProjectDetailScreen
 import com.example.inoconnect.ui.profile.PublicProfileScreen
-import com.example.inoconnect.ui.project_management.ProjectManagementScreen
 import com.example.inoconnect.ui.profile.SettingsScreen
+import com.example.inoconnect.ui.project_management.ProjectManagementScreen
 
 @Composable
 fun AppNavigation() {
@@ -30,14 +31,13 @@ fun AppNavigation() {
 
     NavHost(navController = navController, startDestination = "login") {
 
-        // ... (Login, Register, Organizer, Participant Main, Event Detail, Create Project, Project Detail routes remain unchanged) ...
         composable("login") {
             LoginScreen(
                 onLoginSuccess = { role ->
                     if (role == UserRole.ORGANIZER) navController.navigate("organizer_dash")
                     else navController.navigate("participant_main")
                 },
-                onForgotPasswordClick = { navController.navigate("forgot_password") } ,
+                onForgotPasswordClick = { navController.navigate("forgot_password") },
                 onRegisterClick = { navController.navigate("register") }
             )
         }
@@ -110,7 +110,6 @@ fun AppNavigation() {
             )
         }
 
-        // --- UPDATED: Public Profile Route ---
         composable("public_profile/{userId}") { backStackEntry ->
             val uid = backStackEntry.arguments?.getString("userId") ?: ""
             PublicProfileScreen(
@@ -120,19 +119,16 @@ fun AppNavigation() {
                     navController.navigate("direct_chat/$channelId")
                 },
                 onNavigateToProfile = { targetUserId ->
-                    // If the user clicks on themselves in the list, go to the "Profile" tab
                     val currentUserId = repository.currentUserId
                     if (currentUserId != null && targetUserId == currentUserId) {
                         navController.navigate("participant_main?tab=profile")
                     } else {
-                        // Otherwise push a new public profile screen
                         navController.navigate("public_profile/$targetUserId")
                     }
                 }
             )
         }
 
-        // ... (Project Management, Direct Chat, Settings, Forgot Password remain unchanged) ...
         composable("project_management/{projectId}") { backStackEntry ->
             val projectId = backStackEntry.arguments?.getString("projectId") ?: ""
             ProjectManagementScreen(
@@ -145,7 +141,19 @@ fun AppNavigation() {
                     } else {
                         navController.navigate("public_profile/$userId")
                     }
-                }
+                },
+                navController = navController
+            )
+        }
+
+        composable(
+            route = "group_chat/{channelId}",
+            arguments = listOf(navArgument("channelId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val channelId = backStackEntry.arguments?.getString("channelId") ?: ""
+            GroupChatScreen(
+                channelId = channelId,
+                navController = navController
             )
         }
 

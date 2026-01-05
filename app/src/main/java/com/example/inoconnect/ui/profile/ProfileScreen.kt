@@ -35,13 +35,15 @@ import com.example.inoconnect.data.Project
 import com.example.inoconnect.data.User
 import com.example.inoconnect.ui.auth.BrandBlue
 import com.example.inoconnect.ui.auth.LightGrayInput
+import kotlinx.coroutines.CancellationException // Import this!
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ProfileScreen(
     onLogout: () -> Unit,
-    onNavigateToProfile: (String) -> Unit // --- ADDED PARAMETER
+    onNavigateToProfile: (String) -> Unit
 ) {
     val repository = remember { FirebaseRepository() }
     val scope = rememberCoroutineScope()
@@ -57,6 +59,9 @@ fun ProfileScreen(
     var showSkillsSheet by remember { mutableStateOf(false) }
     var showUserListSheet by remember { mutableStateOf(false) }
     var showProjectListSheet by remember { mutableStateOf(false) }
+
+    // Saving state for Edit Sheet to show progress
+    var isSavingProfile by remember { mutableStateOf(false) }
 
     // List Data
     var userListTitle by remember { mutableStateOf("") }
@@ -105,7 +110,7 @@ fun ProfileScreen(
                     editYear = it.yearOfStudy
                 }
 
-                // 2. Fetch User Projects (Real-time Flow in separate coroutine)
+                // 2. Fetch User Projects
                 launch {
                     repository.getUserProjectsFlow().collect { projects ->
                         userProjects = projects
@@ -132,7 +137,11 @@ fun ProfileScreen(
         }
     }
 
+    // --- CRITICAL FIX IN THIS FUNCTION ---
     fun saveChanges() {
+        if (isSavingProfile) return // Prevent double click
+
+        isSavingProfile = true
         scope.launch {
             try {
                 val currentSkills = user?.skills ?: emptyList()
@@ -148,16 +157,31 @@ fun ProfileScreen(
                     backgroundUri = selectedBackgroundUri,
                     skills = currentSkills,
                 )
+                // Refresh user data explicitly
                 val uid = repository.currentUserId
                 if(uid != null) user = repository.getUserById(uid)
 
-                sheetState.hide()
-                showEditSheet = false
                 selectedImageUri = null
                 selectedBackgroundUri = null
-                snackbarHostState.showSnackbar("Profile Updated Successfully")
+
+                // Hide sheet only if scope is still active
+                if (isActive) {
+                    sheetState.hide()
+                    showEditSheet = false
+                    snackbarHostState.showSnackbar("Profile Updated Successfully")
+                }
             } catch (e: Exception) {
-                snackbarHostState.showSnackbar("Failed to update: ${e.message}")
+                // IMPORTANT: Check if the error is due to cancellation (user quitting)
+                if (e is CancellationException) {
+                    // Do nothing or log it. DO NOT show Snackbar here, it causes the crash/freeze.
+                } else {
+                    // Only show error if the screen is still active
+                    if (isActive) {
+                        snackbarHostState.showSnackbar("Failed to update: ${e.message}")
+                    }
+                }
+            } finally {
+                isSavingProfile = false
             }
         }
     }
@@ -171,7 +195,9 @@ fun ProfileScreen(
                 showSkillsSheet = false
                 snackbarHostState.showSnackbar("Skills Updated")
             } catch (e: Exception) {
-                snackbarHostState.showSnackbar("Error saving skills: ${e.message}")
+                if (e !is CancellationException && isActive) {
+                    snackbarHostState.showSnackbar("Error saving skills: ${e.message}")
+                }
             }
         }
     }
@@ -316,37 +342,120 @@ fun ProfileScreen(
             }
         }
 
-        // ================= EDIT SHEET =================
+        // ================= MODERN EDIT SHEET =================
         if (showEditSheet) {
-            ModalBottomSheet(onDismissRequest = { showEditSheet = false }, sheetState = sheetState) {
-                Column(modifier = Modifier.padding(horizontal = 24.dp).padding(bottom = 40.dp).verticalScroll(rememberScrollState())) {
-                    Text("Edit Profile Details", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(20.dp))
-                    // ... (Image Pickers remain same) ...
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Profile Photo", fontWeight = FontWeight.Medium)
+            ModalBottomSheet(
+                onDismissRequest = {
+                    // Allow dismissal even if saving, the coroutine cancellation logic will handle it safely now
+                    showEditSheet = false
+                },
+                sheetState = sheetState,
+                containerColor = Color.White
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp)
+                        .padding(bottom = 20.dp)
+                        .fillMaxHeight(0.9f)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    // Header
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Text("Edit Profile", fontSize = 22.sp, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.weight(1f))
-                        TextButton(onClick = { profileImageLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) { Text("Change") }
+                        if (isSavingProfile) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = BrandBlue)
+                        } else {
+                            TextButton(onClick = { showEditSheet = false }) {
+                                Text("Cancel", color = Color.Gray)
+                            }
+                        }
                     }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Cover Photo", fontWeight = FontWeight.Medium)
-                        Spacer(Modifier.weight(1f))
-                        TextButton(onClick = { backgroundImageLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) { Text("Change") }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // Images Section
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            // Avatar
+                            Box {
+                                val imageModel: Any? = selectedImageUri ?: user?.profileImageUrl?.takeIf { it.isNotEmpty() }
+                                AsyncImage(
+                                    model = imageModel,
+                                    contentDescription = "Profile",
+                                    modifier = Modifier
+                                        .size(100.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.LightGray)
+                                        .clickable { profileImageLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                                    contentScale = ContentScale.Crop
+                                )
+                                Icon(
+                                    Icons.Default.Edit, "Edit",
+                                    tint = Color.White,
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .background(BrandBlue, CircleShape)
+                                        .padding(4.dp)
+                                        .size(16.dp)
+                                )
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Text("Change Profile Photo", color = BrandBlue, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+
+                            Spacer(Modifier.height(16.dp))
+
+                            // Cover
+                            OutlinedButton(
+                                onClick = { backgroundImageLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Default.Image, null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Change Cover Photo")
+                            }
+                        }
                     }
-                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Spacer(modifier = Modifier.height(32.dp))
+
+                    // Form Fields - Grouped
+                    Text("Identity", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp))
 
                     EditTextField("Full Name", editName) { editName = it }
                     EditTextField("Headline", editHeadline) { editHeadline = it }
+                    EditTextField("Bio", editBio, minLines = 3) { editBio = it }
+
+                    Spacer(Modifier.height(16.dp))
+                    HorizontalDivider(color = Color.LightGray.copy(alpha = 0.3f))
+                    Spacer(Modifier.height(16.dp))
+
+                    Text("Academic Details", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp))
+
                     EditTextField("University", editUniversity) { editUniversity = it }
                     EditTextField("Faculty", editFaculty) { editFaculty = it }
                     EditTextField("Course", editCourse) { editCourse = it }
                     EditTextField("Year of Study", editYear) { editYear = it }
-                    EditTextField("Bio", editBio, minLines = 3) { editBio = it }
 
                     Spacer(modifier = Modifier.height(24.dp))
-                    Button(onClick = { saveChanges() }, modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = BrandBlue)) {
-                        Text("Save Details")
+
+                    Button(
+                        onClick = { saveChanges() },
+                        enabled = !isSavingProfile,
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandBlue)
+                    ) {
+                        if (isSavingProfile) {
+                            Text("Saving...")
+                        } else {
+                            Text("Save Changes", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
+                    Spacer(Modifier.height(40.dp))
                 }
             }
         }
@@ -356,7 +465,6 @@ fun ProfileScreen(
             ModalBottomSheet(onDismissRequest = { showSkillsSheet = false }, sheetState = sheetState) {
                 Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp).padding(bottom = 50.dp)) {
                     Text("Manage Skills", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                    // ... (Skills UI remains same) ...
                     Spacer(Modifier.height(16.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         OutlinedTextField(
@@ -406,18 +514,17 @@ fun ProfileScreen(
             }
         }
 
-        // ================= USER LIST SHEET (EXTENDED & CLICKABLE) =================
+        // ================= USER LIST SHEET =================
         if (showUserListSheet) {
             ModalBottomSheet(
                 onDismissRequest = { showUserListSheet = false },
                 sheetState = sheetState,
                 containerColor = Color(0xFFF8F9FA)
             ) {
-                // --- FIXED: Use fillMaxHeight(0.9f) for extended list ---
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .fillMaxHeight(0.9f) // Taller sheet
+                        .fillMaxHeight(0.9f)
                         .padding(horizontal = 16.dp)
                 ) {
                     Text(
@@ -444,11 +551,10 @@ fun ProfileScreen(
                             contentPadding = PaddingValues(bottom = 40.dp)
                         ) {
                             items(displayedUsers) { listUser ->
-                                // --- MODERN CARD UI & CLICK ACTION ---
                                 ElevatedCard(
                                     onClick = {
                                         showUserListSheet = false
-                                        onNavigateToProfile(listUser.userId) // Navigate!
+                                        onNavigateToProfile(listUser.userId)
                                     },
                                     modifier = Modifier.fillMaxWidth(),
                                     colors = CardDefaults.elevatedCardColors(containerColor = Color.White),
@@ -456,54 +562,25 @@ fun ProfileScreen(
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
                                     Row(
-                                        modifier = Modifier
-                                            .padding(12.dp)
-                                            .fillMaxWidth(),
+                                        modifier = Modifier.padding(12.dp).fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Surface(
-                                            shape = CircleShape,
-                                            modifier = Modifier.size(50.dp),
-                                            color = Color(0xFFE0E0E0)
-                                        ) {
+                                        Surface(shape = CircleShape, modifier = Modifier.size(50.dp), color = Color(0xFFE0E0E0)) {
                                             if (listUser.profileImageUrl.isNotEmpty()) {
-                                                AsyncImage(
-                                                    model = listUser.profileImageUrl,
-                                                    contentDescription = null,
-                                                    contentScale = ContentScale.Crop
-                                                )
+                                                AsyncImage(model = listUser.profileImageUrl, contentDescription = null, contentScale = ContentScale.Crop)
                                             } else {
-                                                Icon(
-                                                    Icons.Default.Person,
-                                                    null,
-                                                    tint = Color.White,
-                                                    modifier = Modifier.padding(10.dp)
-                                                )
+                                                Icon(Icons.Default.Person, null, tint = Color.White, modifier = Modifier.padding(10.dp))
                                             }
                                         }
                                         Spacer(Modifier.width(16.dp))
                                         Column {
-                                            Text(
-                                                text = listUser.username,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 16.sp
-                                            )
+                                            Text(listUser.username, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                                             if (listUser.headline.isNotEmpty()) {
-                                                Text(
-                                                    text = listUser.headline,
-                                                    fontSize = 13.sp,
-                                                    color = Color.Gray,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
+                                                Text(listUser.headline, fontSize = 13.sp, color = Color.Gray, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                             }
                                         }
                                         Spacer(Modifier.weight(1f))
-                                        Icon(
-                                            Icons.AutoMirrored.Filled.List, // Or ArrowForward
-                                            contentDescription = null,
-                                            tint = Color.LightGray
-                                        )
+                                        Icon(Icons.AutoMirrored.Filled.List, contentDescription = null, tint = Color.LightGray)
                                     }
                                 }
                             }
@@ -521,32 +598,17 @@ fun ProfileScreen(
                 containerColor = Color(0xFFF8F9FA)
             ) {
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight(0.9f)
-                        .padding(horizontal = 16.dp)
+                    modifier = Modifier.fillMaxWidth().fillMaxHeight(0.9f).padding(horizontal = 16.dp)
                 ) {
-                    Text(
-                        "My Projects",
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(vertical = 16.dp).align(Alignment.CenterHorizontally)
-                    )
-
+                    Text("My Projects", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 16.dp).align(Alignment.CenterHorizontally))
                     if (userProjects.isEmpty()) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text("No projects yet.", color = Color.Gray)
-                        }
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No projects yet.", color = Color.Gray) }
                     } else {
-                        LazyColumn(
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                            contentPadding = PaddingValues(bottom = 40.dp)
-                        ) {
+                        LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 40.dp)) {
                             items(userProjects) { project ->
                                 val isCompleted = project.status.equals("Completed", ignoreCase = true)
                                 val statusColor = if (isCompleted) Color(0xFF4CAF50) else BrandBlue
                                 val statusText = if (isCompleted) "Completed" else "Active"
-
                                 ElevatedCard(
                                     colors = CardDefaults.elevatedCardColors(containerColor = Color.White),
                                     elevation = CardDefaults.cardElevation(2.dp),
@@ -561,27 +623,11 @@ fun ProfileScreen(
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(project.title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                                             if (project.description.isNotEmpty()) {
-                                                Text(
-                                                    project.description,
-                                                    fontSize = 12.sp,
-                                                    color = Color.Gray,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
+                                                Text(project.description, fontSize = 12.sp, color = Color.Gray, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                             }
                                         }
-                                        Surface(
-                                            color = statusColor.copy(alpha = 0.1f),
-                                            shape = RoundedCornerShape(50),
-                                            modifier = Modifier.padding(start = 12.dp)
-                                        ) {
-                                            Text(
-                                                text = statusText,
-                                                color = statusColor,
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                                            )
+                                        Surface(color = statusColor.copy(alpha = 0.1f), shape = RoundedCornerShape(50), modifier = Modifier.padding(start = 12.dp)) {
+                                            Text(text = statusText, color = statusColor, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
                                         }
                                     }
                                 }

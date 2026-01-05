@@ -8,11 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -189,7 +185,16 @@ fun MessagesScreen(navController: NavController) {
                             ChatChannelItem(
                                 channel = channel,
                                 repository = repository,
-                                onClick = { navController.navigate("direct_chat/${channel.channelId}") }
+                                onClick = {
+                                    // Use channelId for both types. DirectChatScreen may need to be aliased
+                                    // or replaced by GroupChatScreen if unified, but assuming
+                                    // 'direct_chat' handles DMs and 'group_chat' handles groups:
+                                    if (channel.type == ChannelType.PROJECT_GROUP) {
+                                        navController.navigate("group_chat/${channel.channelId}")
+                                    } else {
+                                        navController.navigate("direct_chat/${channel.channelId}")
+                                    }
+                                }
                             )
                         }
                     }
@@ -298,14 +303,10 @@ fun CategoryDialog(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-
-                    // --- 1. INVITATIONS TAB ---
                     if (tab == MessageTab.INVITATIONS) {
                         if (projectInvites.isEmpty()) item { EmptyState("No pending invitations") }
-
                         items(projectInvites) { invite ->
                             val isJoinRequest = invite.type == NotificationType.PROJECT_JOIN_REQUEST
-
                             NotificationItem(
                                 title = invite.title,
                                 body = invite.message,
@@ -336,7 +337,6 @@ fun CategoryDialog(
                         }
                     }
 
-                    // --- 2. NOTIFICATIONS TAB ---
                     if (tab == MessageTab.NOTIFICATIONS) {
                         if (notifications.isEmpty()) item { EmptyState("No new notifications") }
                         items(notifications) { notif ->
@@ -350,7 +350,6 @@ fun CategoryDialog(
                         }
                     }
 
-                    // --- 3. FOLLOWERS TAB ---
                     if (tab == MessageTab.FOLLOWERS) {
                         if (connectionRequests.isEmpty()) item { EmptyState("No pending requests") }
                         items(connectionRequests) { req ->
@@ -359,7 +358,6 @@ fun CategoryDialog(
                                 val user = repository.getUserById(req.fromUserId)
                                 if (user != null) senderName = user.username
                             }
-
                             NotificationItem(
                                 title = "Connection Request",
                                 body = "$senderName wants to connect with you.",
@@ -510,43 +508,67 @@ fun HeaderCard(
     }
 }
 
-// --- Chat Channel Item (No Long Click) ---
 @Composable
 fun ChatChannelItem(
     channel: ChatChannel,
     repository: FirebaseRepository,
     onClick: () -> Unit
 ) {
-    var otherUser by remember { mutableStateOf<User?>(null) }
+    var displayTitle by remember { mutableStateOf("") }
+    var displayImage by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(channel) {
-        otherUser = repository.getOtherUserInChannel(channel)
+    // Determine what to show based on channel type
+    if (channel.type == ChannelType.PROJECT_GROUP) {
+        // --- GROUP / PROJECT CHAT ---
+        displayTitle = channel.groupName ?: "Group Chat"
+        displayImage = channel.groupImageUrl
+    } else {
+        // --- DIRECT MESSAGE ---
+        var otherUser by remember { mutableStateOf<User?>(null) }
+        LaunchedEffect(channel) {
+            otherUser = repository.getOtherUserInChannel(channel)
+            displayTitle = otherUser?.username ?: "User"
+            displayImage = otherUser?.profileImageUrl
+        }
     }
 
-    if (otherUser == null) return
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-            .background(Color.White, RoundedCornerShape(12.dp))
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Surface(shape = CircleShape, modifier = Modifier.size(50.dp), color = Color.LightGray) {
-            if (otherUser!!.profileImageUrl.isNotEmpty()) {
-                AsyncImage(model = otherUser!!.profileImageUrl, contentDescription = null, contentScale = ContentScale.Crop)
-            } else {
-                Icon(Icons.Default.Person, null, modifier = Modifier.padding(10.dp), tint = Color.White)
+    // Only render if we have a title (prevents flicker of empty items)
+    if (displayTitle.isNotEmpty()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onClick() }
+                .background(Color.White, RoundedCornerShape(12.dp))
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(shape = CircleShape, modifier = Modifier.size(50.dp), color = Color.LightGray) {
+                if (!displayImage.isNullOrEmpty()) {
+                    AsyncImage(model = displayImage, contentDescription = null, contentScale = ContentScale.Crop)
+                } else {
+                    // Different icon for Group vs Person
+                    val icon = if (channel.type == ChannelType.PROJECT_GROUP) Icons.Default.Groups else Icons.Default.Person
+                    Icon(icon, null, modifier = Modifier.padding(10.dp), tint = Color.White)
+                }
             }
-        }
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                Text(otherUser!!.username, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Text(SimpleDateFormat("HH:mm", Locale.getDefault()).format(channel.lastMessageTimestamp.toDate()), fontSize = 12.sp, color = Color.Gray)
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                    Text(displayTitle, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        SimpleDateFormat("HH:mm", Locale.getDefault()).format(channel.lastMessageTimestamp.toDate()),
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                }
+                Text(
+                    text = channel.lastMessage,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = Color.Gray,
+                    fontSize = 14.sp
+                )
             }
-            Text(text = channel.lastMessage, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.Gray, fontSize = 14.sp)
         }
     }
 }
