@@ -28,7 +28,7 @@ fun ProfileStatsGrid(
     projects: Int,
     onConnectionsClick: () -> Unit,
     onFollowingClick: () -> Unit,
-    onProjectsClick: () -> Unit // --- ADDED Click Handler for Projects
+    onProjectsClick: () -> Unit 
 ) {
     ElevatedCard(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
@@ -45,7 +45,7 @@ fun ProfileStatsGrid(
             VerticalDivider()
             StatItem("Following", following.toString(), onClick = onFollowingClick)
             VerticalDivider()
-            StatItem("Projects", projects.toString(), onClick = onProjectsClick) // Now Clickable
+            StatItem("Projects", projects.toString(), onClick = onProjectsClick) 
         }
     }
 }
