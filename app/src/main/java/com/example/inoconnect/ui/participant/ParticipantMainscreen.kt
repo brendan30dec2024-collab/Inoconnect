@@ -153,7 +153,6 @@ fun ParticipantMainScreen(
                 MyNetworkScreen(onUserClick = { userId -> rootNavController.navigate("public_profile/$userId") })
             }
             composable("profile") {
-                // --- UPDATED: Pass navigation callback ---
                 ProfileScreen(
                     onLogout = { rootNavController.navigate("login") { popUpTo(0) } },
                     onNavigateToProfile = { userId -> rootNavController.navigate("public_profile/$userId") }
