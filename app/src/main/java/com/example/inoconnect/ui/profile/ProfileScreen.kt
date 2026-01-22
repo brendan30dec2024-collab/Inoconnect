@@ -35,7 +35,7 @@ import com.example.inoconnect.data.Project
 import com.example.inoconnect.data.User
 import com.example.inoconnect.ui.auth.BrandBlue
 import com.example.inoconnect.ui.auth.LightGrayInput
-import kotlinx.coroutines.CancellationException // Import this!
+import kotlinx.coroutines.CancellationException 
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -49,7 +49,7 @@ fun ProfileScreen(
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // --- State ---
+    // State
     var user by remember { mutableStateOf<User?>(null) }
     var userProjects by remember { mutableStateOf<List<Project>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -137,9 +137,8 @@ fun ProfileScreen(
         }
     }
 
-    // --- CRITICAL FIX IN THIS FUNCTION ---
     fun saveChanges() {
-        if (isSavingProfile) return // Prevent double click
+        if (isSavingProfile) return
 
         isSavingProfile = true
         scope.launch {
@@ -171,7 +170,6 @@ fun ProfileScreen(
                     snackbarHostState.showSnackbar("Profile Updated Successfully")
                 }
             } catch (e: Exception) {
-                // IMPORTANT: Check if the error is due to cancellation (user quitting)
                 if (e is CancellationException) {
                     // Do nothing or log it. DO NOT show Snackbar here, it causes the crash/freeze.
                 } else {
@@ -217,7 +215,7 @@ fun ProfileScreen(
                     .background(Color(0xFFF8F9FA))
                     .verticalScroll(rememberScrollState())
             ) {
-                // ================= HEADER =================
+                // HEADER
                 Box(modifier = Modifier.fillMaxWidth()) {
                     val bgModel: Any? = selectedBackgroundUri ?: user?.backgroundImageUrl?.takeIf { it.isNotEmpty() }
                     Box(modifier = Modifier.fillMaxWidth().height(160.dp).background(BrandBlue)) {
@@ -252,7 +250,7 @@ fun ProfileScreen(
                     }
                 }
 
-                // ================= BODY =================
+                // BODY
                 Column(modifier = Modifier.padding(horizontal = 24.dp)) {
                     Spacer(Modifier.height(24.dp))
 
@@ -342,7 +340,7 @@ fun ProfileScreen(
             }
         }
 
-        // ================= MODERN EDIT SHEET =================
+        // MODERN EDIT SHEET
         if (showEditSheet) {
             ModalBottomSheet(
                 onDismissRequest = {
@@ -460,7 +458,7 @@ fun ProfileScreen(
             }
         }
 
-        // ================= SKILLS SHEET =================
+        // SKILLS SHEET
         if (showSkillsSheet) {
             ModalBottomSheet(onDismissRequest = { showSkillsSheet = false }, sheetState = sheetState) {
                 Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp).padding(bottom = 50.dp)) {
@@ -514,7 +512,7 @@ fun ProfileScreen(
             }
         }
 
-        // ================= USER LIST SHEET =================
+        // USER LIST SHEET
         if (showUserListSheet) {
             ModalBottomSheet(
                 onDismissRequest = { showUserListSheet = false },
@@ -590,7 +588,7 @@ fun ProfileScreen(
             }
         }
 
-        // ================= PROJECT LIST SHEET =================
+        // PROJECT LIST SHEET
         if (showProjectListSheet) {
             ModalBottomSheet(
                 onDismissRequest = { showProjectListSheet = false },
