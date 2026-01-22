@@ -63,7 +63,7 @@ android {
 }
 
 dependencies {
-    // --- Firebase ---
+    // Firebase
     implementation(platform("com.google.firebase:firebase-bom:34.7.0"))
     implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-auth")
@@ -71,10 +71,10 @@ dependencies {
     implementation("com.google.firebase:firebase-storage")
     implementation(libs.kotlinx.coroutines.play.services)
 
-    // --- Navigation ---
+    // Navigation
     implementation("androidx.navigation:navigation-compose:2.9.6")
 
-    // --- Core Android & Compose ---
+    // Core Android & Compose
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
