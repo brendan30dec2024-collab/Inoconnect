@@ -23,7 +23,7 @@ class MyNetworkViewModel : ViewModel() {
     )
     val networkStats: StateFlow<Map<String, Int>> = _networkStats.asStateFlow()
 
-    // --- NEW: Lists for Connections & Following ---
+    // Lists for Connections & Following
     private val _connectionList = MutableStateFlow<List<User>>(emptyList())
     val connectionList: StateFlow<List<User>> = _connectionList.asStateFlow()
 
@@ -50,7 +50,7 @@ class MyNetworkViewModel : ViewModel() {
         }
     }
 
-    // --- NEW: Load Full User Lists for Sheets ---
+    // Load Full User Lists for Sheets
     fun loadConnections() {
         viewModelScope.launch {
             val uid = repository.currentUserId ?: return@launch
@@ -81,7 +81,6 @@ class MyNetworkViewModel : ViewModel() {
         viewModelScope.launch {
             val success = repository.sendConnectionRequest(toUserId)
             if (success) {
-                // Optimistic Update
                 _suggestedUsers.value = _suggestedUsers.value.map { networkUser ->
                     if (networkUser.user.userId == toUserId) {
                         networkUser.copy(connectionStatus = "pending_sent")
