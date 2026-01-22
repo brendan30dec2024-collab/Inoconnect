@@ -42,18 +42,18 @@ fun MyNetworkScreen(
     val suggestedUsers by viewModel.suggestedUsers.collectAsState()
     val stats by viewModel.networkStats.collectAsState()
 
-    // --- NEW: Collect Lists ---
+    // Collect Lists
     val connectionsList by viewModel.connectionList.collectAsState()
     val followingList by viewModel.followingList.collectAsState()
 
     // Sheet State
     var showSuggestionsSheet by remember { mutableStateOf(false) }
-    var showConnectionsSheet by remember { mutableStateOf(false) } // NEW
-    var showFollowingSheet by remember { mutableStateOf(false) }   // NEW
+    var showConnectionsSheet by remember { mutableStateOf(false) }
+    var showFollowingSheet by remember { mutableStateOf(false) } 
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // --- MAIN SCREEN CONTENT ---
+    // MAIN SCREEN CONTENT
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -138,7 +138,7 @@ fun MyNetworkScreen(
         }
     }
 
-    // --- SUGGESTIONS BOTTOM SHEET ---
+    // SUGGESTIONS BOTTOM SHEET
     if (showSuggestionsSheet) {
         ModalBottomSheet(
             onDismissRequest = { showSuggestionsSheet = false },
@@ -180,7 +180,7 @@ fun MyNetworkScreen(
         }
     }
 
-    // --- NEW: CONNECTIONS BOTTOM SHEET ---
+    // CONNECTIONS BOTTOM SHEET
     if (showConnectionsSheet) {
         ModalBottomSheet(
             onDismissRequest = { showConnectionsSheet = false },
@@ -207,7 +207,7 @@ fun MyNetworkScreen(
         }
     }
 
-    // --- NEW: FOLLOWING BOTTOM SHEET ---
+    // NEW: FOLLOWING BOTTOM SHEET
     if (showFollowingSheet) {
         ModalBottomSheet(
             onDismissRequest = { showFollowingSheet = false },
@@ -235,7 +235,7 @@ fun MyNetworkScreen(
     }
 }
 
-// --- UPDATED: NetworkOverviewSection with Click Listeners ---
+// NetworkOverviewSection with Click Listeners
 @Composable
 fun NetworkOverviewSection(
     invitesCount: Int,
@@ -268,14 +268,14 @@ fun NetworkOverviewSection(
 fun NetworkStatItem(label: String, count: Int, onClick: () -> Unit = {}) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clickable { onClick() }.padding(8.dp) // Added Clickable
+        modifier = Modifier.clickable { onClick() }.padding(8.dp)
     ) {
         Text(text = count.toString(), fontWeight = FontWeight.Bold, fontSize = 18.sp, color = BrandBlue)
         Text(text = label, fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Medium)
     }
 }
 
-// --- NEW: Compact User Row for Lists ---
+// Compact User Row for Lists
 @Composable
 fun CompactUserRow(user: User, onClick: () -> Unit) {
     Row(
@@ -310,7 +310,6 @@ fun CompactUserRow(user: User, onClick: () -> Unit) {
     }
 }
 
-// UserCard remains the same...
 @Composable
 fun UserCard(
     networkUser: NetworkUser,
