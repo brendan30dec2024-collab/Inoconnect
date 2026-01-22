@@ -44,9 +44,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-// --- UPDATED: Track User ID instead of a boolean flag ---
-// This ensures the message resets if a different user logs in,
-// but stays hidden if the SAME user just navigates back and forth.
 private var lastWelcomedUserId: String? = null
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -78,29 +75,27 @@ fun ParticipantHome(
         isLoading = false
     }
 
-    // --- UPDATED: Welcome Logic ---
+    // Welcome Logic 
     LaunchedEffect(userProfile) {
         val currentUser = userProfile
         if (currentUser != null && currentUser.userId != lastWelcomedUserId) {
-            // Update the tracker immediately so it doesn't fire again
             lastWelcomedUserId = currentUser.userId
 
             delay(500)
             snackbarHostState.showSnackbar(
                 message = "Welcome back, ${currentUser.username}",
                 duration = SnackbarDuration.Short,
-                // Removed 'withDismissAction = true' so it auto-dismisses smoothly
                 withDismissAction = false
             )
         }
     }
 
-    // --- Pager & Tab State ---
+    // Pager & Tab State
     val pagerState = rememberPagerState(pageCount = { 2 })
     val coroutineScope = rememberCoroutineScope()
     val selectedTabIndex = pagerState.currentPage
 
-    // --- Scroll / Collapsing Header State ---
+    // Scroll / Collapsing Header State
     val density = LocalDensity.current
 
     // 1. Calculate Heights
@@ -178,12 +173,10 @@ fun ParticipantHome(
                 .fillMaxSize()
                 .nestedScroll(nestedScrollConnection)
         ) {
-            // 1. Swipeable Content (The Lists)
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize()
             ) { page ->
-                // Push content down by the full header height
                 val contentPadding = PaddingValues(top = fullHeaderHeightDp + 16.dp, bottom = 80.dp)
 
                 if (isLoading) {
@@ -199,7 +192,7 @@ fun ParticipantHome(
                 }
             }
 
-            // 2. The Collapsing Header Overlay
+            // The Collapsing Header Overlay
             Box(
                 modifier = Modifier
                     .height(fullHeaderHeightDp)
@@ -208,7 +201,7 @@ fun ParticipantHome(
                     .background(MaterialTheme.colorScheme.background)
             ) {
                 Column {
-                    // --- PART A: Fading Banner (Collapsible) ---
+                    // Fading Banner (Collapsible)
                     Column(
                         modifier = Modifier
                             .height(fullHeaderHeightDp - stickyTabsHeightDp)
@@ -228,7 +221,7 @@ fun ParticipantHome(
                         HeroCarousel(bannerImages = localBanners)
                     }
 
-                    // --- PART B: Sticky Tabs & Search (Pinned) ---
+                    // Sticky Tabs & Search (Pinned)
                     Column(
                         modifier = Modifier
                             .height(stickyTabsHeightDp)
@@ -298,7 +291,7 @@ fun ParticipantHome(
     }
 }
 
-// --- SUB-COMPONENTS ---
+// SUB-COMPONENTS
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
