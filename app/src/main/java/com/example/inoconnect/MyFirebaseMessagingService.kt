@@ -86,7 +86,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             val channel = NotificationChannel(
                 channelId,
                 "InnoConnect Messages", // User visible channel name
-                NotificationManager.IMPORTANCE_HIGH // HIGH for chat messages
+                NotificationManager.IMPORTANCE_HIGH 
             )
             channel.description = "Notifications for new messages and alerts"
             notificationManager.createNotificationChannel(channel)
