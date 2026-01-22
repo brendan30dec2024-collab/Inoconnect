@@ -12,7 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.List // --- CHANGED IMPORT
+import androidx.compose.material.icons.automirrored.filled.List 
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -94,7 +94,7 @@ fun PublicProfileScreen(
                     .background(Color(0xFFF8F9FA))
                     .verticalScroll(rememberScrollState())
             ) {
-                // ================= HEADER =================
+                // HEADER
                 Box(modifier = Modifier.fillMaxWidth()) {
                     Box(modifier = Modifier.fillMaxWidth().height(160.dp).background(BrandBlue))
 
@@ -130,7 +130,7 @@ fun PublicProfileScreen(
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        // --- ACTION BUTTONS ROW ---
+                        // ACTION BUTTONS ROW
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
 
                             // 1. Connect Button
@@ -198,7 +198,7 @@ fun PublicProfileScreen(
                     }
                 }
 
-                // ================= BODY =================
+                // BODY
                 Column(modifier = Modifier.padding(horizontal = 24.dp)) {
                     Spacer(Modifier.height(16.dp))
 
@@ -208,7 +208,7 @@ fun PublicProfileScreen(
                         projects = u.projectsCompleted,
                         onConnectionsClick = { loadListAndShow(u.connectionIds, false) },
                         onFollowingClick = { loadListAndShow(u.followingIds, true) },
-                        onProjectsClick = {} // --- FIX: Added empty lambda for now
+                        onProjectsClick = {}
                     )
 
                     Spacer(Modifier.height(16.dp))
@@ -216,7 +216,6 @@ fun PublicProfileScreen(
                     ProfileSectionCard(title = "Academic Biodata") {
                         InfoRow(Icons.Default.Info, "University", u.university)
                         InfoRow(Icons.Default.Home, "Faculty", u.faculty)
-                        // --- FIX: Use AutoMirrored Icon ---
                         InfoRow(Icons.AutoMirrored.Filled.List, "Course", u.course)
                         InfoRow(Icons.Default.DateRange, "Year", u.yearOfStudy)
                         HorizontalDivider(
@@ -264,7 +263,7 @@ fun PublicProfileScreen(
         }
     }
 
-    // --- BOTTOM SHEET FOR LISTS ---
+    // BOTTOM SHEET FOR LISTS
     if (showConnectionsSheet || showFollowingSheet) {
         ModalBottomSheet(
             onDismissRequest = {
