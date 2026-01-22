@@ -68,7 +68,7 @@ fun SettingsScreen(
                 onClick = { showChangePassDialog = true }
             )
 
-            Spacer(Modifier.height(8.dp)) // Small spacer between items
+            Spacer(Modifier.height(8.dp)) 
 
             // Delete Account (Red, but in same section)
             SettingsItemCard(
@@ -80,7 +80,7 @@ fun SettingsScreen(
         }
     }
 
-    // --- CHANGE PASSWORD DIALOG ---
+    // CHANGE PASSWORD DIALOG 
     if (showChangePassDialog) {
         SecurityActionDialog(
             title = "Change Password",
@@ -106,7 +106,7 @@ fun SettingsScreen(
         )
     }
 
-    // --- DELETE ACCOUNT DIALOG ---
+    // DELETE ACCOUNT DIALOG 
     if (showDeleteAccountDialog) {
         SecurityActionDialog(
             title = "Delete Account",
