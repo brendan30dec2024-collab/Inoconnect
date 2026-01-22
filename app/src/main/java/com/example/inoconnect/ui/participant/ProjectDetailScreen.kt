@@ -28,7 +28,7 @@ import coil.compose.AsyncImage
 import com.example.inoconnect.data.FirebaseRepository
 import com.example.inoconnect.data.Project
 import com.example.inoconnect.ui.auth.BrandBlue
-import com.google.firebase.auth.FirebaseAuth // Make sure this import is here
+import com.google.firebase.auth.FirebaseAuth 
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -41,27 +41,20 @@ fun ProjectDetailScreen(
     val repository = remember { FirebaseRepository() }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-
-    // --- MISSING VARIABLES FIXED HERE ---
     val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: ""
     var isSendingRequest by remember { mutableStateOf(false) }
 
     // Logic to refresh the screen
     var refreshTrigger by remember { mutableIntStateOf(0) }
     fun refreshProject() { refreshTrigger++ }
-
-    // State
     var project by remember { mutableStateOf<Project?>(null) }
     var creatorName by remember { mutableStateOf("Loading...") }
     var isLoading by remember { mutableStateOf(true) }
 
-    // Added refreshTrigger to the key so it re-runs when called
     LaunchedEffect(projectId, refreshTrigger) {
         isLoading = true
         val fetchedProject = repository.getProjectById(projectId)
         project = fetchedProject
-
-        // Fetch Creator Name
         if (fetchedProject != null) {
             val user = repository.getUserById(fetchedProject.creatorId)
             creatorName = user?.username ?: "Unknown User"
@@ -74,7 +67,7 @@ fun ProjectDetailScreen(
             .fillMaxSize()
             .background(Color.White)
     ) {
-        // --- 1. Blue Curved Header ---
+        // Blue Curved Header
         Canvas(modifier = Modifier.fillMaxWidth().height(220.dp)) {
             val path = Path().apply {
                 moveTo(0f, 0f)
@@ -99,7 +92,7 @@ fun ProjectDetailScreen(
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
         }
 
-        // --- 2. Main Content ---
+        // Main Content
         if (isLoading) {
             CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = BrandBlue)
         } else if (project == null) {
@@ -107,12 +100,12 @@ fun ProjectDetailScreen(
         } else {
             val p = project!!
 
-            // Logic: Determine User Status
+            // Determine User Status
             val isCreator = p.creatorId == currentUserId
             val isMember = p.memberIds.contains(currentUserId)
             val isPending = p.pendingApplicantIds.contains(currentUserId)
 
-            // New Feature: Capacity Check
+            //  Capacity Check
             val isFull = p.memberIds.size >= p.targetTeamSize
 
             Column(
@@ -168,7 +161,7 @@ fun ProjectDetailScreen(
                         Column(modifier = Modifier.padding(24.dp)) {
                             Text(p.title, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.Black)
 
-                            // --- NEW: Creator Name ---
+                            // Creator Name
                             Text(
                                 text = "Created by $creatorName",
                                 fontSize = 14.sp,
@@ -238,7 +231,6 @@ fun ProjectDetailScreen(
                                     } else if (!isMember && !isPending && !isFull) {
                                         scope.launch {
                                             isSendingRequest = true
-                                            // FIX: Removed 'viewModel' call and used 'repository' directly as you set it up
                                             val success = repository.requestToJoinProject(projectId)
                                             isSendingRequest = false
                                             if (success) {
