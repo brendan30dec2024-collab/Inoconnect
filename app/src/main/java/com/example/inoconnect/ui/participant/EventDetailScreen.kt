@@ -40,15 +40,13 @@ fun EventDetailScreen(
     val context = LocalContext.current
 
     var event by remember { mutableStateOf<Event?>(null) }
-    var organizerName by remember { mutableStateOf("Loading...") } // <--- NEW STATE
+    var organizerName by remember { mutableStateOf("Loading...") } 
     var isLoading by remember { mutableStateOf(true) }
     var isJoining by remember { mutableStateOf(false) }
 
     LaunchedEffect(eventId) {
         val fetchedEvent = repository.getEventById(eventId)
         event = fetchedEvent
-
-        // Fetch Organizer Name if event exists
         if (fetchedEvent != null) {
             val user = repository.getUserById(fetchedEvent.organizerId)
             organizerName = user?.username ?: "Unknown Organizer"
@@ -61,7 +59,7 @@ fun EventDetailScreen(
             .fillMaxSize()
             .background(Color.White)
     ) {
-        // --- 1. Blue Curved Header ---
+        // Blue Curved Header 
         Canvas(modifier = Modifier.fillMaxWidth().height(220.dp)) {
             val path = Path().apply {
                 moveTo(0f, 0f)
@@ -86,7 +84,7 @@ fun EventDetailScreen(
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
         }
 
-        // --- 2. Main Content ---
+        // Main Content
         if (isLoading) {
             CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = BrandBlue)
         } else if (event == null) {
