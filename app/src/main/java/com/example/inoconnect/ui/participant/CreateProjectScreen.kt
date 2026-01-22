@@ -92,7 +92,7 @@ fun CreateProjectScreen(
             .fillMaxSize()
             .background(Color.White)
     ) {
-        // --- 1. Blue Curved Header ---
+        // 1. Blue Curved Header
         Canvas(modifier = Modifier.fillMaxWidth().height(220.dp)) {
             val path = Path().apply {
                 moveTo(0f, 0f)
@@ -117,7 +117,7 @@ fun CreateProjectScreen(
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
         }
 
-        // --- 2. Main Content Card ---
+        // Main Content Card
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -145,7 +145,7 @@ fun CreateProjectScreen(
                     modifier = Modifier.padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // --- Image Upload Area ---
+                    // Image Upload Area
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -172,7 +172,7 @@ fun CreateProjectScreen(
 
                     Spacer(Modifier.height(24.dp))
 
-                    // --- Form Fields ---
+                    // Form Fields
 
                     // 1. Title
                     CustomStyledInput(
