@@ -86,8 +86,7 @@ class MainActivity : ComponentActivity() {
 
             // Get new FCM registration token
             val token = task.result
-
-            // Update in Firestore safely
+            
             if (token != null) {
                 FirebaseFirestore.getInstance().collection("users").document(userId)
                     .update("fcmToken", token)
