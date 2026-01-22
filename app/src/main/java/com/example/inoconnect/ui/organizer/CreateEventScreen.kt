@@ -74,7 +74,7 @@ fun CreateEventScreen(
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            // --- IMAGE PICKER ---
+            // IMAGE PICKER
             if (selectedImageUri != null) {
                 AsyncImage(
                     model = selectedImageUri,
@@ -92,14 +92,14 @@ fun CreateEventScreen(
 
             Spacer(Modifier.height(16.dp))
 
-            // --- TEXT FIELDS ---
+            // TEXT FIELDs
             OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Event Title") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
             OutlinedTextField(value = location, onValueChange = { location = it }, label = { Text("Location") }, modifier = Modifier.fillMaxWidth())
 
             Spacer(Modifier.height(16.dp))
 
-            // --- DATE PICKERS ---
+            // DATE PICKERS 
             // Event Date
             OutlinedTextField(
                 value = eventDate,
@@ -132,7 +132,7 @@ fun CreateEventScreen(
 
             Spacer(Modifier.height(24.dp))
 
-            // --- SUBMIT BUTTON ---
+            // SUBMIT BUTTON
             if (isUploading) {
                 CircularProgressIndicator()
             } else {
