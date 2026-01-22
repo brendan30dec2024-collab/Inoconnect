@@ -65,7 +65,7 @@ fun OrganizerDashboard(
                     onDeleteClick = {
                         scope.launch {
                             repository.deleteEvent(event.eventId)
-                            refreshEvents() // Reload list to remove the item
+                            refreshEvents() 
                         }
                     }
                 )
@@ -91,7 +91,6 @@ fun EventItemWithDelete(event: Event, onDeleteClick: () -> Unit) {
             // Text Info
             Column(modifier = Modifier.weight(1f)) {
                 Text(event.title, style = MaterialTheme.typography.titleLarge)
-                // FIX: Using the new 'eventDate' and 'location' fields
                 Text("Date: ${event.eventDate}", style = MaterialTheme.typography.bodyMedium)
                 Text("Location: ${event.location}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                 Text("Participants: ${event.participantIds.size}", style = MaterialTheme.typography.bodySmall)
